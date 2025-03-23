@@ -1,9 +1,6 @@
 namespace Kanawanagasaki.TwitchHub.Services;
 
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using System.Threading;
-using Kanawanagasaki.TwitchHub.Models;
+using Models;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -29,7 +26,7 @@ public class TwitchAuthService
 
     public async Task<TwitchAuthModel?> GetRestored(string twitchLogin)
     {
-        var model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.Username.ToLower() == twitchLogin.ToLower());
+        TwitchAuthModel? model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.Username.ToLower() == twitchLogin.ToLower());
         if (model is null)
             return null;
 
@@ -43,7 +40,7 @@ public class TwitchAuthService
 
     public async Task<TwitchAuthModel?> GetRestoredById(string id)
     {
-        var model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == id);
+        TwitchAuthModel? model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == id);
         if (model is null)
             return null;
 
@@ -57,7 +54,7 @@ public class TwitchAuthService
 
     public async Task<TwitchAuthModel?> GetRestoredByUuid(Guid uuid)
     {
-        var model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.Uuid == uuid);
+        TwitchAuthModel? model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.Uuid == uuid);
         if (model is null)
             return null;
 
@@ -73,8 +70,8 @@ public class TwitchAuthService
     {
         try
         {
-            var validationModel = await Validate(model.AccessToken);
-            var isValid = validationModel is not null;
+            ValidateRecord? validationModel = await Validate(model.AccessToken);
+            bool isValid = validationModel is not null;
             if (!isValid)
             {
                 _logger.LogWarning("Failed to validate token for {ModelUsername}", model.Username);
@@ -105,13 +102,13 @@ public class TwitchAuthService
     public record ValidateRecord(string client_id, string login, string[] scopes, string user_id, int expires_in);
     public async Task<ValidateRecord?> Validate(string token)
     {
-        using var http = new HttpClient();
+        using HttpClient http = new();
         http.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
-        var response = await http.GetAsync("https://id.twitch.tv/oauth2/validate");
+        HttpResponseMessage response = await http.GetAsync("https://id.twitch.tv/oauth2/validate");
 
         if (response.StatusCode == System.Net.HttpStatusCode.OK)
         {
-            var json = await response.Content.ReadAsStringAsync();
+            string json = await response.Content.ReadAsStringAsync();
             return System.Text.Json.JsonSerializer.Deserialize<ValidateRecord>(json);
         }
         else
@@ -130,28 +127,28 @@ public class TwitchAuthService
         };
         FormUrlEncodedContent form = new(postData);
 
-        using var http = new HttpClient();
-        var response = await http.PostAsync("https://id.twitch.tv/oauth2/token", form);
+        using HttpClient http = new();
+        HttpResponseMessage response = await http.PostAsync("https://id.twitch.tv/oauth2/token", form);
         if (response.StatusCode == System.Net.HttpStatusCode.OK)
         {
-            var json = await response.Content.ReadAsStringAsync();
-            var obj = JsonConvert.DeserializeObject<JObject>(json);
+            string json = await response.Content.ReadAsStringAsync();
+            JObject? obj = JsonConvert.DeserializeObject<JObject>(json);
             if (obj is null)
                 return false;
 
-            var accessToken = obj.Value<string>("access_token");
+            string? accessToken = obj.Value<string>("access_token");
             if (accessToken is null)
                 return false;
-            var refreshToken = obj.Value<string>("refresh_token");
+            string? refreshToken = obj.Value<string>("refresh_token");
             if (refreshToken is null)
                 return false;
-            var expiresIn = obj.Value<int>("expires_in");
+            int expiresIn = obj.Value<int>("expires_in");
 
-            var user = await _api.GetUser(accessToken);
+            TwitchGetUsersResponse? user = await _api.GetUser(accessToken);
             if (user is null)
                 return false;
 
-            var model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == user.id);
+            TwitchAuthModel? model = await _db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == user.id);
             if (model is null)
             {
                 model = new()
@@ -185,31 +182,31 @@ public class TwitchAuthService
 
     private async Task<bool> RefreshToken(TwitchAuthModel model)
     {
-        using var http = new HttpClient();
+        using HttpClient http = new();
 
-        var data = new Dictionary<string, string>
+        Dictionary<string, string> data = new()
         {
             { "grant_type", "refresh_token" },
             { "refresh_token", model.RefreshToken },
             { "client_id", _conf["Twitch:ClientId"] ?? string.Empty },
             { "client_secret", _conf["Twitch:Secret"] ?? string.Empty }
         };
-        using var form = new FormUrlEncodedContent(data);
+        using FormUrlEncodedContent form = new(data);
 
-        var response = await http.PostAsync("https://id.twitch.tv/oauth2/token", form);
+        HttpResponseMessage response = await http.PostAsync("https://id.twitch.tv/oauth2/token", form);
         if (response.StatusCode == System.Net.HttpStatusCode.OK)
         {
-            var json = await response.Content.ReadAsStringAsync();
-            var obj = JsonConvert.DeserializeObject<JObject>(json);
+            string json = await response.Content.ReadAsStringAsync();
+            JObject? obj = JsonConvert.DeserializeObject<JObject>(json);
             if (obj is null)
                 return false;
-            var accessToken = obj.Value<string>("access_token");
+            string? accessToken = obj.Value<string>("access_token");
             if (accessToken is null)
                 return false;
-            var refreshToken = obj.Value<string>("refresh_token");
+            string? refreshToken = obj.Value<string>("refresh_token");
             if (refreshToken is null)
                 return false;
-            var expiresIn = obj.Value<int>("expires_in");
+            int expiresIn = obj.Value<int>("expires_in");
 
             model.AccessToken = accessToken;
             model.RefreshToken = refreshToken;

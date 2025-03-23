@@ -1,9 +1,8 @@
 namespace Kanawanagasaki.TwitchHub.Pages;
 
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
-using Microsoft.EntityFrameworkCore;
 
 public partial class Chat : ComponentBase
 {

@@ -44,7 +44,7 @@ public class CommandsService
 
     public async Task AddTextCommand(string commandName, string text)
     {
-        var model = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name.ToLower() == commandName.ToLower());
+        TextCommandModel? model = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name.ToLower() == commandName.ToLower());
         if (model is null)
         {
             model = new()
@@ -60,7 +60,7 @@ public class CommandsService
 
     public async Task<bool> RemoveTextCommand(string commandName)
     {
-        var model = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name.ToLower() == commandName.ToLower());
+        TextCommandModel? model = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name.ToLower() == commandName.ToLower());
         if (model is not null)
         {
             _db.TextCommands.Remove(model);
@@ -77,7 +77,7 @@ public class CommandsService
 
     public async Task<ProcessedChatMessage> ProcessMessage(TwitchAuthModel botAuth, ChatMessage message, TwitchChatMessagesService chat)
     {
-        var processedMessage = new ProcessedChatMessage(botAuth, message);
+        ProcessedChatMessage processedMessage = new(botAuth, message);
 
         try
         {
@@ -98,7 +98,7 @@ public class CommandsService
                 }
                 else
                 {
-                    var command = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name == commandName.ToLower());
+                    TextCommandModel? command = await _db.TextCommands.FirstOrDefaultAsync(m => m.Name == commandName.ToLower());
                     if (command is not null)
                         processedMessage = processedMessage.WithReply(command.Text);
                 }

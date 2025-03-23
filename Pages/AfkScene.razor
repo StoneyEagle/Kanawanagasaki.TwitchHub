@@ -1,4 +1,5 @@
 @page "/afk-scene"
+@using Kanawanagasaki.TwitchHub.Data.JsHostObjects
 
 @if(string.IsNullOrWhiteSpace(Channel))
 {
@@ -9,7 +10,7 @@
 else if(_afkScene is not null)
 {
     <div class='root' style='background: @(_afkScene.bg.Replace("\\", "").Replace("url(", "(").Replace(";", "\\;"));'>
-        @foreach(var letter in _afkScene.symbols)
+        @foreach(SymbolData? letter in _afkScene.symbols)
         {
             <span class='letter'
                 style="

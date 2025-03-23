@@ -1,6 +1,6 @@
 namespace Kanawanagasaki.TwitchHub;
 
-using Kanawanagasaki.TwitchHub.Models;
+using Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,8 +15,8 @@ public class SQLiteContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        var connectionStringBuilder = new SqliteConnectionStringBuilder { DataSource = "data.db" };
-        var connection = new SqliteConnection(connectionStringBuilder.ToString());
+        SqliteConnectionStringBuilder connectionStringBuilder = new() { DataSource = "data.db" };
+        SqliteConnection connection = new(connectionStringBuilder.ToString());
 
         optionsBuilder.UseSqlite(connection);
     }

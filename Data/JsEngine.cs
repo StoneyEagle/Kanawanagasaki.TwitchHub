@@ -1,8 +1,7 @@
 namespace Kanawanagasaki.TwitchHub.Data;
 
-using Kanawanagasaki.TwitchHub.Data.JsHostObjects;
+using JsHostObjects;
 using Microsoft.ClearScript.V8;
-using Newtonsoft.Json;
 
 public class JsEngine : IDisposable
 {
@@ -17,9 +16,9 @@ public class JsEngine : IDisposable
 
     public JsEngine(SQLiteContext db, string channel)
     {
-        _engine = new V8ScriptEngine(V8ScriptEngineFlags.EnableDateTimeConversion
-                    | V8ScriptEngineFlags.EnableTaskPromiseConversion
-                    | V8ScriptEngineFlags.EnableValueTaskPromiseConversion);
+        _engine = new(V8ScriptEngineFlags.EnableDateTimeConversion
+                      | V8ScriptEngineFlags.EnableTaskPromiseConversion
+                      | V8ScriptEngineFlags.EnableValueTaskPromiseConversion);
 
         _engine.AddHostObject("console", new
         {
@@ -31,7 +30,7 @@ public class JsEngine : IDisposable
             })
         });
 
-        StreamApi = new StreamApi(db, this, channel);
+        StreamApi = new(db, this, channel);
         _engine.AddHostObject("stream", StreamApi);
     }
 
@@ -50,16 +49,16 @@ public class JsEngine : IDisposable
     {
         bool finished = false;
 
-        var mainTask = Task.Run(() =>
+        Task<string> mainTask = Task.Run(() =>
         {
             if (fromCommand)
                 LastCodeExecuted = code;
-            var result = _engine.ExecuteCommand(code);
+            string? result = _engine.ExecuteCommand(code);
             finished = true;
             return result;
         });
 
-        var delayTask = Task.Delay(1000);
+        Task delayTask = Task.Delay(1000);
 
         await Task.WhenAny(mainTask, delayTask);
 

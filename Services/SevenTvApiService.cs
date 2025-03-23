@@ -1,8 +1,7 @@
+using Kanawanagasaki.TwitchHub.Models;
+
 namespace Kanawanagasaki.TwitchHub.Services;
 
-using System.Net;
-using System.Net.Sockets;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 public class SevenTvApiService
@@ -21,8 +20,7 @@ public class SevenTvApiService
     }
 
     public Task<GqlResponse<GqlMeData>?> GetMe()
-        => Execute<GqlResponse<GqlMeData>>(new GqlRequest
-        (
+        => Execute<GqlResponse<GqlMeData>>(new(
             "Me",
             "query Me($productId: Id!) { users { me { id mainConnection { platformDisplayName platformAvatarUrl __typename } style { activeProfilePicture { images { url mime size width height scale frameCount __typename } __typename } activePaint { id name data { layers { id ty { __typename ... on PaintLayerTypeSingleColor { color { hex __typename } __typename } ... on PaintLayerTypeLinearGradient { angle repeating stops { at color { hex __typename } __typename } __typename } ... on PaintLayerTypeRadialGradient { repeating stops { at color { hex __typename } __typename } shape __typename } ... on PaintLayerTypeImage { images { url mime size scale width height frameCount __typename } __typename } } opacity __typename } shadows { color { hex __typename } offsetX offsetY blur __typename } __typename } __typename } activeEmoteSetId __typename } highestRoleColor { hex __typename } roles { name color { hex __typename } __typename } editableEmoteSetIds permissions { admin { manageRedeemCodes manageEntitlements __typename } user { manageAny useCustomProfilePicture manageBilling manageSessions __typename } emote { manageAny __typename } emoteSet { manage manageAny __typename } ticket { create __typename } __typename } billing(productId: $productId) { subscriptionInfo { activePeriod { providerId { provider __typename } __typename } __typename } __typename } editorFor { user { id mainConnection { platformDisplayName platformAvatarUrl __typename } style { activeProfilePicture { images { url mime size width height scale frameCount __typename } __typename } activePaint { id name data { layers { id ty { __typename ... on PaintLayerTypeSingleColor { color { hex __typename } __typename } ... on PaintLayerTypeLinearGradient { angle repeating stops { at color { hex __typename } __typename } __typename } ... on PaintLayerTypeRadialGradient { repeating stops { at color { hex __typename } __typename } shape __typename } ... on PaintLayerTypeImage { images { url mime size scale width height frameCount __typename } __typename } } opacity __typename } shadows { color { hex __typename } offsetX offsetY blur __typename } __typename } __typename } activeEmoteSetId __typename } highestRoleColor { hex __typename } __typename } state __typename } __typename } __typename }}",
             new()
@@ -32,8 +30,7 @@ public class SevenTvApiService
         ));
 
     public Task<GqlResponse<GqlOneEmoteData>?> GetOneEmote(string emoteId)
-        => Execute<GqlResponse<GqlOneEmoteData>>(new GqlRequest
-        (
+        => Execute<GqlResponse<GqlOneEmoteData>>(new(
             "OneEmote",
             "query OneEmote($id: Id!, $isDefaultSetSet: Boolean!, $defaultSetId: Id!) { emotes { emote(id: $id) { id defaultName owner { id mainConnection { platformDisplayName platformAvatarUrl __typename } style { activeProfilePicture { images { url mime size width height scale frameCount __typename } __typename } activePaint { id name data { layers { id ty { __typename ... on PaintLayerTypeSingleColor { color { hex __typename } __typename } ... on PaintLayerTypeLinearGradient { angle repeating stops { at color { hex __typename } __typename } __typename } ... on PaintLayerTypeRadialGradient { repeating stops { at color { hex __typename } __typename } shape __typename } ... on PaintLayerTypeImage { images { url mime size scale width height frameCount __typename } __typename } } opacity __typename } shadows { color { hex __typename } offsetX offsetY blur __typename } __typename } __typename } __typename } highestRoleColor { hex __typename } editors { editorId permissions { emote { manage __typename } __typename } __typename } __typename } tags flags { animated approvedPersonal defaultZeroWidth deniedPersonal nsfw private publicListed __typename } attribution { user { mainConnection { platformDisplayName platformAvatarUrl __typename } style { activeProfilePicture { images { url mime size width height scale frameCount __typename } __typename } __typename } highestRoleColor { hex __typename } __typename } __typename } imagesPending images { url mime size width height scale frameCount __typename } ranking(ranking: TRENDING_WEEKLY) inEmoteSets(emoteSetIds: [$defaultSetId]) @include(if: $isDefaultSetSet) { emoteSetId emote { id alias __typename } __typename } deleted __typename } __typename }}",
             new()
@@ -45,8 +42,7 @@ public class SevenTvApiService
         ));
 
     public Task<GqlResponse<GqlAddEmoteToSetData>?> AddEmoteToSet(string setId, string emoteId, string emoteAlias)
-        => Execute<GqlResponse<GqlAddEmoteToSetData>>(new GqlRequest
-        (
+        => Execute<GqlResponse<GqlAddEmoteToSetData>>(new(
             "AddEmoteToSet",
             "mutation AddEmoteToSet($setId: Id!, $emote: EmoteSetEmoteId!) { emoteSets { emoteSet(id: $setId) { addEmote(id: $emote) { id __typename } __typename } __typename }}",
             new()
@@ -62,17 +58,17 @@ public class SevenTvApiService
 
     public async Task<(bool isSucess, string message)> AddEmoteToDefaultSet(string emoteId)
     {
-        var me = await GetMe();
-        var activeEmoteSetId = me?.data?.users?.me?.style?.activeEmoteSetId;
+        GqlResponse<GqlMeData>? me = await GetMe();
+        string? activeEmoteSetId = me?.data?.users?.me?.style?.activeEmoteSetId;
         if (activeEmoteSetId is null)
             return (false, "Failed to authenticate 7tv user");
 
-        var emote = await GetOneEmote(emoteId);
-        var emoteDefaultName = emote?.data?.emotes?.emote?.defaultName;
+        GqlResponse<GqlOneEmoteData>? emote = await GetOneEmote(emoteId);
+        string? emoteDefaultName = emote?.data?.emotes?.emote?.defaultName;
         if (emoteDefaultName is null)
             return (false, "Failed to retrieve 7tv emote from emote id");
 
-        var addResult = await AddEmoteToSet(activeEmoteSetId, emoteId, emoteDefaultName);
+        GqlResponse<GqlAddEmoteToSetData>? addResult = await AddEmoteToSet(activeEmoteSetId, emoteId, emoteDefaultName);
         if (addResult is null)
             return (false, $"Failed to add \"{emoteDefaultName}\" to active 7tv set");
         if (addResult.errors is not null && 0 < addResult.errors.Count)
@@ -83,36 +79,36 @@ public class SevenTvApiService
 
     public async Task<T?> Execute<T>(GqlRequest gql) where T : class
     {
-        using var req = new HttpRequestMessage
+        using HttpRequestMessage req = new()
         {
             Method = HttpMethod.Post,
-            RequestUri = new Uri("https://7tv.io/v4/gql"),
+            RequestUri = new("https://7tv.io/v4/gql"),
             Content = JsonContent.Create(gql)
         };
 
-        using var res = await Execute(req);
+        using HttpResponseMessage res = await Execute(req);
         if (res.IsSuccessStatusCode)
             return await res.Content.ReadFromJsonAsync<T>();
 
-        var body = await res.Content.ReadAsStringAsync();
+        string body = await res.Content.ReadAsStringAsync();
         _logger.LogError("{Method}(): {StatusCodeInt} {StatusCode}\n{Body}", nameof(GetMe), (int)res.StatusCode, res.StatusCode, body);
         return null;
     }
 
     public async Task<HttpResponseMessage> Execute(HttpRequestMessage req)
     {
-        var sevenTvAuthSetting = await _db.Settings.FirstOrDefaultAsync(x => x.Key == SEVEN_TV_AUTH_KEY);
+        SettingModel? sevenTvAuthSetting = await _db.Settings.FirstOrDefaultAsync(x => x.Key == SEVEN_TV_AUTH_KEY);
 
         if (sevenTvAuthSetting is not null)
             req.Headers.Add("Authorization", "Bearer " + sevenTvAuthSetting.Value);
 
-        using var client = new HttpClient();
+        using HttpClient client = new();
         return await client.SendAsync(req);
     }
 
     public async Task Authenticate(string auth)
     {
-        var sevenTvAuthSetting = await _db.Settings.FirstOrDefaultAsync(x => x.Key == SEVEN_TV_AUTH_KEY);
+        SettingModel? sevenTvAuthSetting = await _db.Settings.FirstOrDefaultAsync(x => x.Key == SEVEN_TV_AUTH_KEY);
 
         if (sevenTvAuthSetting is null)
         {

@@ -14,13 +14,13 @@ public partial class TwitchAuthResponse : ComponentBase
     [SupplyParameterFromQuery]
     public string? Code { get; set; }
 
-    private bool _processed = false;
+    private bool _processed;
 
     protected override async Task OnParametersSetAsync()
     {
         if (_processed) return;
 
-        var uri = new Uri(NavMgr.Uri);
+        Uri uri = new(NavMgr.Uri);
         await TwAuth.SignIn($"{uri.Scheme}://{uri.Host}:{uri.Port}/twitchauthresponse", Code ?? string.Empty);
         NavMgr.NavigateTo("/Auth");
 

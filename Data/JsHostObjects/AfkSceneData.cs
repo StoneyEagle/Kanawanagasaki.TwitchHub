@@ -7,21 +7,21 @@ public class AfkSceneData
 {
     public string bg { get; set; } = "#1e1e1e";
 
-    public ArrayJs<SymbolData> symbols { get; private set; } = new ArrayJs<SymbolData>(Array.Empty<SymbolData>());
+    public ArrayJs<SymbolData> symbols { get; private set; } = new(Array.Empty<SymbolData>());
 
     internal void SetContent(string content)
     {
         if (!string.IsNullOrWhiteSpace(content))
         {
-            symbols = new ArrayJs<SymbolData>(content.Select((ch, i)
+            symbols = new(content.Select((ch, i)
                 =>
                 {
-                    var l = new SymbolData(ch);
+                    SymbolData l = new(ch);
                     l.x = (-(content.Length * 24) / 2 + 12) + i * 24;
                     return l;
                 }).ToArray());
         }
-        else symbols = new ArrayJs<SymbolData>(Array.Empty<SymbolData>());
+        else symbols = new(Array.Empty<SymbolData>());
     }
 
     public override string ToString()
@@ -32,7 +32,7 @@ public class SymbolData
 {
     public readonly char symbol;
 
-    public float x = 0;
+    public float x;
     public float y = 0;
 
     public float size = 36;
@@ -52,7 +52,7 @@ public class SymbolData
 public class ArrayJs<T> : ReadOnlyCollection<T>
 {
     public ArrayJs(IList<T> list) : base(list) { }
-    public int length => this.Count;
+    public int length => Count;
 
     public override string ToString()
         => $"{typeof(T).Name}[{Count}]";

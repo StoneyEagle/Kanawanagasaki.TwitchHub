@@ -1,8 +1,8 @@
 namespace Kanawanagasaki.TwitchHub.Components;
 
 using System.Threading.Tasks;
-using Kanawanagasaki.TwitchHub.Data;
-using Kanawanagasaki.TwitchHub.Services;
+using Data;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 

@@ -1,4 +1,5 @@
 using Kanawanagasaki.TwitchHub.Data;
+using Kanawanagasaki.TwitchHub.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kanawanagasaki.TwitchHub.Services.Commands;
@@ -18,7 +19,7 @@ public class SetVoiceCommand : ACommand
         if (message.CommandArgs.Length == 0)
             return message.WithReply("Please, provide a name for the voice. Use !getvoices command to see options.");
 
-        var voices = await _tts.GetVoices();
+        AzureTtsVoiceInfo[] voices = await _tts.GetVoices();
         voices = voices.Where(v => v.ShortName is not null && TransformString(v.ShortName).Contains(TransformString(message.CommandArgs[0]))).ToArray();
         if (voices.Length == 0)
             return message.WithReply("Voice not found");
@@ -35,7 +36,7 @@ public class SetVoiceCommand : ACommand
         pitch = Math.Clamp(pitch, -100, 100);
         rate = Math.Clamp(rate, 0.1, 2);
 
-        var model = await _db.ViewerVoices.FirstOrDefaultAsync(v => v.Username == message.Original.Username);
+        ViewerVoice? model = await _db.ViewerVoices.FirstOrDefaultAsync(v => v.Username == message.Original.Username);
         if (model is null)
         {
             model = new()

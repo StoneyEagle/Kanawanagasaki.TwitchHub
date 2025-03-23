@@ -4,8 +4,7 @@ using TwitchLib.Client;
 using TwitchLib.Client.Models;
 using TwitchLib.Communication.Clients;
 using TwitchLib.Communication.Models;
-using Kanawanagasaki.TwitchHub.Models;
-using System.Reflection;
+using Models;
 
 public class TwitchChatService(TwitchAuthService _twitchAuth, ILogger<TwitchChatService> _logger) : IDisposable
 {
@@ -25,21 +24,21 @@ public class TwitchChatService(TwitchAuthService _twitchAuth, ILogger<TwitchChat
                 return _clients[authModel.UserId].Client;
             }
 
-            var credentials = new ConnectionCredentials(authModel.Username, authModel.AccessToken);
-            var clientOptions = new ClientOptions
+            ConnectionCredentials credentials = new(authModel.Username, authModel.AccessToken);
+            ClientOptions clientOptions = new()
             {
                 MessagesAllowedInPeriod = 750,
                 ThrottlingPeriod = TimeSpan.FromSeconds(30),
                 ReconnectionPolicy = null
             };
-            var customClient = new WebSocketClient(clientOptions);
-            client = new TwitchClient(customClient);
+            WebSocketClient customClient = new(clientOptions);
+            client = new(customClient);
             client.Initialize(credentials, channel);
 
             client.OnConnected += (_, _) =>
             {
                 _logger.LogInformation("[{authModel.Username}] Connected", authModel.Username);
-                foreach (var x in client.JoinedChannels)
+                foreach (JoinedChannel? x in client.JoinedChannels)
                     client.JoinChannel(x.Channel);
             };
             client.OnJoinedChannel += (_, ev) => _logger.LogInformation("[{authModel.Username}] Channel {ev.Channel} joined", authModel.Username, ev.Channel);
@@ -47,7 +46,7 @@ public class TwitchChatService(TwitchAuthService _twitchAuth, ILogger<TwitchChat
             client.OnDisconnected += async (_, _) =>
             {
                 _logger.LogInformation("[{authModel.Username}] Disconnected", authModel.Username);
-                var resAuth = await _twitchAuth.GetRestoredByUuid(authModel.Uuid);
+                TwitchAuthModel? resAuth = await _twitchAuth.GetRestoredByUuid(authModel.Uuid);
                 if (resAuth is not null)
                 {
                     credentials = new(resAuth.Username, resAuth.AccessToken);
@@ -57,7 +56,7 @@ public class TwitchChatService(TwitchAuthService _twitchAuth, ILogger<TwitchChat
 
             client.Connect();
 
-            _clients[authModel.UserId] = (client, new() { listener });
+            _clients[authModel.UserId] = (client, [listener]);
         }
 
         return client;
@@ -85,7 +84,7 @@ public class TwitchChatService(TwitchAuthService _twitchAuth, ILogger<TwitchChat
     {
         lock (_clients)
         {
-            foreach (var kv in _clients)
+            foreach (KeyValuePair<string, (TwitchClient Client, HashSet<object> Listeners)> kv in _clients)
                 kv.Value.Client.Disconnect();
             _clients.Clear();
         }

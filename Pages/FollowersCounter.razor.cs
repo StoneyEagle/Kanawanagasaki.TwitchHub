@@ -1,7 +1,7 @@
 namespace Kanawanagasaki.TwitchHub.Pages;
 
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 
@@ -42,7 +42,7 @@ public partial class FollowersCounter : ComponentBase
         if (string.IsNullOrWhiteSpace(Channel))
             return;
 
-        var model = await Db.TwitchAuth.FirstOrDefaultAsync(m => m.Username.ToLower() == Channel.ToLower());
+        TwitchAuthModel? model = await Db.TwitchAuth.FirstOrDefaultAsync(m => m.Username.ToLower() == Channel.ToLower());
         if (model is null)
             return;
         await UpdateChannel(model);

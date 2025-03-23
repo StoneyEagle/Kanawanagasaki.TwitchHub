@@ -1,12 +1,11 @@
 namespace Kanawanagasaki.TwitchHub.Pages;
 
-using Kanawanagasaki.TwitchHub.Data;
-using Kanawanagasaki.TwitchHub.Data.JsHostObjects;
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Data;
+using Data.JsHostObjects;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.ClearScript;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.JSInterop;
 using TwitchLib.Client;
 
@@ -32,12 +31,12 @@ public partial class AfkScene : ComponentBase, IAsyncDisposable
     [Parameter]
     [SupplyParameterFromQuery]
     public string? Channel { get; set; }
-    private string? _cachedChannel = null;
+    private string? _cachedChannel;
 
     [Parameter]
     [SupplyParameterFromQuery]
     public string? Bot { get; set; }
-    private string? _cachedBot = null;
+    private string? _cachedBot;
 
     private AfkSceneData? _afkScene;
     private string _afkSceneJsName = "_$" + Guid.NewGuid().ToString().Replace("-", "");
@@ -50,12 +49,12 @@ public partial class AfkScene : ComponentBase, IAsyncDisposable
     private TwitchClient? _chatClient;
     private TwitchAuthModel? _twAuth;
 
-    private int _framesToSkip = 0;
-    private int _framesToSkipCount = 0;
+    private int _framesToSkip;
+    private int _framesToSkipCount;
 
-    private bool _isInitialized = false;
+    private bool _isInitialized;
 
-    private int _jsFaultsCount = 0;
+    private int _jsFaultsCount;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -141,13 +140,13 @@ public partial class AfkScene : ComponentBase, IAsyncDisposable
         if (_engine is null)
             return;
 
-        var tickCode = _engine.StreamApi.afk.tickCode;
-        var symbolTickCode = _engine.StreamApi.afk.symbolTickCode;
+        string? tickCode = _engine.StreamApi.afk.tickCode;
+        string? symbolTickCode = _engine.StreamApi.afk.symbolTickCode;
 
-        var diff = DateTime.UtcNow - _startDateTime;
-        var tickCounter = (int)(diff.TotalMilliseconds / 10);
+        TimeSpan diff = DateTime.UtcNow - _startDateTime;
+        int tickCounter = (int)(diff.TotalMilliseconds / 10);
 
-        var code = $@"
+        string code = $@"
             ({tickCode})({_afkSceneJsName}, {tickCounter});
             for(let i = 0; i < {_symbolsJsName}.length; i++)
                 ({symbolTickCode})({_symbolsJsName}[i], i, {_symbolsJsName}.length, {tickCounter});
@@ -158,7 +157,7 @@ public partial class AfkScene : ComponentBase, IAsyncDisposable
             await _engine.Execute(code, false);
             _framesToSkip = 0;
 
-            var logs = _engine.FlushLogs();
+            string? logs = _engine.FlushLogs();
             if (!string.IsNullOrWhiteSpace(logs))
             {
                 _jsFaultsCount++;

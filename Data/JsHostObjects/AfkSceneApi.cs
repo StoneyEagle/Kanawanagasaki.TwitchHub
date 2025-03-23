@@ -1,3 +1,5 @@
+using Kanawanagasaki.TwitchHub.Models;
+
 namespace Kanawanagasaki.TwitchHub.Data.JsHostObjects;
 
 using Microsoft.ClearScript;
@@ -64,7 +66,7 @@ public class AfkSceneApi : IDisposable
         _engine = engine;
         _channel = channel;
 
-        var model = _db.JsAfkCodes.FirstOrDefault(m => m.Channel.ToLower() == _channel.ToLower());
+        JsAfkCodeModel? model = _db.JsAfkCodes.FirstOrDefault(m => m.Channel.ToLower() == _channel.ToLower());
         if (model is null) resetToDefault();
         else
         {
@@ -76,9 +78,9 @@ public class AfkSceneApi : IDisposable
 
     public void resetToDefault()
     {
-        this.initCode = DEFAULT_INIT_CODE;
-        this.tickCode = DEFAULT_TICK_CODE;
-        this.symbolTickCode = DEFAULT_SYMBOL_TICK_CODE;
+        initCode = DEFAULT_INIT_CODE;
+        tickCode = DEFAULT_TICK_CODE;
+        symbolTickCode = DEFAULT_SYMBOL_TICK_CODE;
         Save();
         OnCodeChange?.Invoke();
     }
@@ -142,25 +144,25 @@ public class AfkSceneApi : IDisposable
         if (_engine.LastCodeExecuted is null)
             return null;
 
-        var methodIndex = _engine.LastCodeExecuted.LastIndexOf(methodName);
+        int methodIndex = _engine.LastCodeExecuted.LastIndexOf(methodName);
         if (methodIndex < 0) return null;
 
-        var afkIndex = _engine.LastCodeExecuted.LastIndexOf("afk", methodIndex);
+        int afkIndex = _engine.LastCodeExecuted.LastIndexOf("afk", methodIndex);
         if (afkIndex < 0) return null;
 
-        var streamIndex = _engine.LastCodeExecuted.LastIndexOf("stream", methodIndex);
+        int streamIndex = _engine.LastCodeExecuted.LastIndexOf("stream", methodIndex);
         if (streamIndex < 0) return null;
 
-        var dot = _engine.LastCodeExecuted.Substring(afkIndex + 3, methodIndex - afkIndex - 3).Trim();
+        string dot = _engine.LastCodeExecuted.Substring(afkIndex + 3, methodIndex - afkIndex - 3).Trim();
         if (dot != ".") return null;
 
         dot = _engine.LastCodeExecuted.Substring(streamIndex + 6, afkIndex - streamIndex - 6).Trim();
         if (dot != ".") return null;
 
-        var parenthesisIndex = _engine.LastCodeExecuted.IndexOf("(", methodIndex + methodName.Length);
+        int parenthesisIndex = _engine.LastCodeExecuted.IndexOf("(", methodIndex + methodName.Length);
         if (parenthesisIndex < 0) return null;
 
-        var nothingness = _engine.LastCodeExecuted.Substring(methodIndex + methodName.Length, parenthesisIndex - methodIndex - methodName.Length).Trim();
+        string nothingness = _engine.LastCodeExecuted.Substring(methodIndex + methodName.Length, parenthesisIndex - methodIndex - methodName.Length).Trim();
         if (nothingness != "") return null;
 
         int parenthesisCounter = 0;
@@ -186,7 +188,7 @@ public class AfkSceneApi : IDisposable
 
     private void Save()
     {
-        var model = _db.JsAfkCodes.FirstOrDefault(m => m.Channel.ToLower() == _channel.ToLower());
+        JsAfkCodeModel? model = _db.JsAfkCodes.FirstOrDefault(m => m.Channel.ToLower() == _channel.ToLower());
         if (model is null)
         {
             model = new()

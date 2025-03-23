@@ -11,9 +11,9 @@ public class JsCommand(JsEnginesService _jsEngines) : ACommand
     public override ProcessedChatMessage Execute(ProcessedChatMessage chatMessage, TwitchChatMessagesService chat)
     {
         string code = string.Join(" ", chatMessage.CommandArgs);
-        chatMessage.WithCode(new CodeContent(code, ("js", "javascript", "javascript")));
+        chatMessage.WithCode(new(code, ("js", "javascript", "javascript")));
 
-        var js = _jsEngines.GetEngine(chatMessage.Original.Channel);
+        JsEngine? js = _jsEngines.GetEngine(chatMessage.Original.Channel);
         if (js is null)
         {
             chatMessage.WithReply("Js engine not connected to this channel");
@@ -22,7 +22,7 @@ public class JsCommand(JsEnginesService _jsEngines) : ACommand
 
         try
         {
-            var result = js.Execute(code, true).Result;
+            string result = js.Execute(code, true).Result;
             if (!string.IsNullOrWhiteSpace(result) && result != "[undefined]")
             {
                 if (result.StartsWith("/") || result.StartsWith("."))
@@ -33,7 +33,7 @@ public class JsCommand(JsEnginesService _jsEngines) : ACommand
                     chatMessage.WithCustomContent(new OutputContent(result));
                 }
             }
-            var logs = js.FlushLogs();
+            string? logs = js.FlushLogs();
             if (!string.IsNullOrWhiteSpace(logs))
             {
                 if (logs.Length > 450)

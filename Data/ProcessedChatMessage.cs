@@ -1,8 +1,7 @@
 namespace Kanawanagasaki.TwitchHub.Data;
 
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
-using Microsoft.AspNetCore.Routing.Tree;
+using Models;
+using Services;
 using TwitchLib.Client.Models;
 using System.Globalization;
 
@@ -14,10 +13,10 @@ public class ProcessedChatMessage
 
     public List<MessagePart> ParsedMessage { get; private set; } = [];
 
-    public bool IsCommand { get; private set; } = false;
+    public bool IsCommand { get; private set; }
     public string? CommandName { get; private set; }
     public string[] CommandArgs { get; private set; } = [];
-    public bool ShouldReply { get; private set; } = false;
+    public bool ShouldReply { get; private set; }
     public string? Reply { get; private set; }
 
     public List<object> CustomContent { get; private set; } = [];
@@ -27,7 +26,7 @@ public class ProcessedChatMessage
     public string? YoutubeVideoId { get; private set; }
 
     public TwitchGetUsersResponse? Sender { get; private set; }
-    public string? Color { get; private set; } = null;
+    public string? Color { get; private set; }
 
     public ProcessedChatMessage(TwitchAuthModel botAuth, ChatMessage originalMessage)
     {
@@ -72,14 +71,14 @@ public class ProcessedChatMessage
 
     public ProcessedChatMessage WithImage(string url)
     {
-        this.ImageUrl = url;
+        ImageUrl = url;
         Fragments |= RenderFragments.Image;
         return this;
     }
 
     public ProcessedChatMessage WithYoutubeVideo(string videoId)
     {
-        this.YoutubeVideoId = videoId;
+        YoutubeVideoId = videoId;
         Fragments |= RenderFragments.YoutubeVideo;
         return this;
     }
@@ -87,7 +86,7 @@ public class ProcessedChatMessage
     public ProcessedChatMessage WithCode(CodeContent code)
     {
         Fragments |= RenderFragments.Code;
-        return this.WithCustomContent(code);
+        return WithCustomContent(code);
     }
 
     public void SetColor(string color)
@@ -102,14 +101,14 @@ public class ProcessedChatMessage
 
     public void ParseEmotes(Dictionary<string, ThirdPartyEmote> thirdPartyEmotes)
     {
-        var parts = new List<string>();
-        var emoteUrls = new List<(string code, string url)>();
-        var emotes = Original.EmoteSet.Emotes.OrderBy(x => x.StartIndex);
-        var stringInfo = new StringInfo(Original.Message);
+        List<string> parts = [];
+        List<(string code, string url)> emoteUrls = [];
+        IOrderedEnumerable<Emote> emotes = Original.EmoteSet.Emotes.OrderBy(x => x.StartIndex);
+        StringInfo stringInfo = new(Original.Message);
         int leftIndex = 0;
-        foreach (var emote in emotes)
+        foreach (Emote? emote in emotes)
         {
-            var leftPart = stringInfo.SubstringByTextElements(leftIndex, emote.StartIndex - leftIndex);
+            string leftPart = stringInfo.SubstringByTextElements(leftIndex, emote.StartIndex - leftIndex);
             parts.Add(leftPart);
             emoteUrls.Add((emote.Name, $"https://static-cdn.jtvnw.net/emoticons/v2/{emote.Id}/default/dark/1.0"));
             leftIndex = emote.EndIndex + 1;
@@ -117,17 +116,17 @@ public class ProcessedChatMessage
 
         if (leftIndex < stringInfo.LengthInTextElements)
         {
-            var leftOverPart = stringInfo.SubstringByTextElements(leftIndex);
+            string leftOverPart = stringInfo.SubstringByTextElements(leftIndex);
             if (0 < leftOverPart.Length)
                 parts.Add(leftOverPart);
         }
 
         for (int i = 0; i < parts.Count; i++)
         {
-            var split = parts[i].Split(" ");
+            string[] split = parts[i].Split(" ");
             for (int j = 0; j < split.Length; j++)
             {
-                if (!thirdPartyEmotes.TryGetValue(split[j], out var emote))
+                if (!thirdPartyEmotes.TryGetValue(split[j], out ThirdPartyEmote? emote))
                     continue;
 
                 parts[i] = string.Join(" ", split.Take(j)) + " ";

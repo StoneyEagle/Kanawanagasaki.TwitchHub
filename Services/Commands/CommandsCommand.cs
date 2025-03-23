@@ -20,7 +20,7 @@ public class CommandsCommand : ACommand
 
     public override async Task<ProcessedChatMessage> ExecuteAsync(ProcessedChatMessage chatMessage, TwitchChatMessagesService chat)
     {
-        List<string> commandNames = new();
+        List<string> commandNames = [];
         commandNames.AddRange(_service.Commands.Where(c => c.Value.IsAuthorizedToExecute(chatMessage.Original)).Select(c => c.Value.Name));
         commandNames.AddRange(_service.ExternalCommands.Select(c => c.Key));
         commandNames.AddRange(await _db.TextCommands.Select(c => c.Name).ToArrayAsync());

@@ -1,6 +1,6 @@
 namespace Kanawanagasaki.TwitchHub.Services.Commands;
 
-using Kanawanagasaki.TwitchHub.Data;
+using Data;
 using TwitchLib.Client.Models;
 
 public abstract class ACommand

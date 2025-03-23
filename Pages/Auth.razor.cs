@@ -2,8 +2,8 @@ namespace Kanawanagasaki.TwitchHub.Pages;
 
 using System.Threading.Tasks;
 using System.Web;
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,14 +25,14 @@ public partial class Auth : ComponentBase
         TwAuth.AuthenticationChange += _ => InvokeAsync(StateHasChanged);
 
         _models = await Db.TwitchAuth.ToArrayAsync();
-        foreach (var model in _models)
+        foreach (TwitchAuthModel? model in _models)
             await TwAuth.Restore(model);
         await Db.SaveChangesAsync();
     }
 
     private async Task RefreshInfo(TwitchAuthModel model)
     {
-        var validationModel = await TwAuth.Validate(model.AccessToken);
+        TwitchAuthService.ValidateRecord? validationModel = await TwAuth.Validate(model.AccessToken);
         if (validationModel is null)
             return;
         model.UserId = validationModel.user_id;
@@ -42,7 +42,7 @@ public partial class Auth : ComponentBase
 
     private void NavigateToTwitchAuth()
     {
-        var uri = new Uri(NavMgr.Uri);
+        Uri uri = new(NavMgr.Uri);
 
         Dictionary<string, string> query = new()
         {

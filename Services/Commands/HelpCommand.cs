@@ -1,4 +1,5 @@
 using Kanawanagasaki.TwitchHub.Data;
+using Kanawanagasaki.TwitchHub.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kanawanagasaki.TwitchHub.Services.Commands;
@@ -24,7 +25,7 @@ public class HelpCommand : ACommand
             return chatMessage.WithoutMessage().WithReply($"@{chatMessage.Original.DisplayName}, specify comamnd name to see description");
         else
         {
-            var commandName = chatMessage.CommandArgs.First();
+            string commandName = chatMessage.CommandArgs.First();
             if(_service.Commands.ContainsKey(commandName))
             {
                 if(_service.Commands[commandName].IsAuthorizedToExecute(chatMessage.Original))
@@ -35,7 +36,7 @@ public class HelpCommand : ACommand
                 return chatMessage.WithoutMessage().WithReply($"@{chatMessage.Original.DisplayName}, {_service.ExternalCommands[commandName]}");
             else
             {
-                var model = await _db.TextCommands.FirstOrDefaultAsync(c => c.Name.ToLower() == commandName.ToLower());
+                TextCommandModel? model = await _db.TextCommands.FirstOrDefaultAsync(c => c.Name.ToLower() == commandName.ToLower());
                 if(model is not null) return chatMessage.WithoutMessage().WithReply($"@{chatMessage.Original.DisplayName}, command with useful information ;)");
                 else return chatMessage.WithoutMessage().WithReply($"@{chatMessage.Original.DisplayName}, {commandName} not found");
             }

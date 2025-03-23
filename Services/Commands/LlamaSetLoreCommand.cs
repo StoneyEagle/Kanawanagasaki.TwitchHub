@@ -1,6 +1,8 @@
+using Kanawanagasaki.TwitchHub.Models;
+
 namespace Kanawanagasaki.TwitchHub.Services.Commands;
 
-using Kanawanagasaki.TwitchHub.Data;
+using Data;
 using Microsoft.EntityFrameworkCore;
 using TwitchLib.Client.Models;
 
@@ -15,9 +17,9 @@ public class LlamaSetLoreCommand(SQLiteContext _db) : ACommand
 
     public override async Task<ProcessedChatMessage> ExecuteAsync(ProcessedChatMessage chatMessage, TwitchChatMessagesService chat)
     {
-        var lore = string.Join(" ", chatMessage.CommandArgs);
+        string lore = string.Join(" ", chatMessage.CommandArgs);
 
-        var extraLore = await _db.Settings.FirstOrDefaultAsync(x => x.Key == "llama_extra_lore");
+        SettingModel? extraLore = await _db.Settings.FirstOrDefaultAsync(x => x.Key == "llama_extra_lore");
         if (extraLore is null)
         {
             extraLore = new()

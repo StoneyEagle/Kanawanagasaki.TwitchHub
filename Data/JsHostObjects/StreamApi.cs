@@ -9,7 +9,7 @@ public class StreamApi
     public StreamApi(SQLiteContext db, JsEngine engine, string channel)
     {
         _engine = engine;
-        afk = new AfkSceneApi(db, engine, channel);
+        afk = new(db, engine, channel);
     }
 
     public string toString()

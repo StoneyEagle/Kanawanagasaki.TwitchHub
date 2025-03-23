@@ -14,7 +14,7 @@ public class GetVoicesCommand : ACommand
 
     public override async Task<ProcessedChatMessage> ExecuteAsync(ProcessedChatMessage message, TwitchChatMessagesService chat)
     {
-        var voices = await _tts.GetVoices();
+        AzureTtsVoiceInfo[] voices = await _tts.GetVoices();
         if (0 < message.CommandArgs.Length)
             voices = voices.Where(v => v.ShortName is not null && TransformString(v.ShortName).StartsWith(TransformString(message.CommandArgs[0]))).ToArray();
         if (voices.Length == 0)

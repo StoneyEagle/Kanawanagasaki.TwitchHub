@@ -1,6 +1,6 @@
 namespace Kanawanagasaki.TwitchHub.Components;
 
-using Kanawanagasaki.TwitchHub.Data;
+using Data;
 using Microsoft.AspNetCore.Components;
 
 public partial class HtmlPreviewComponent : ComponentBase

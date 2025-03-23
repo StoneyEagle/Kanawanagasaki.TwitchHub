@@ -2,7 +2,7 @@ namespace Kanawanagasaki.TwitchHub.Services;
 
 using System.Text.Json;
 using System.Threading;
-using Kanawanagasaki.TwitchHub.Models;
+using Models;
 using Microsoft.EntityFrameworkCore;
 
 public class TwitchRewardsService : BackgroundService
@@ -44,11 +44,11 @@ public class TwitchRewardsService : BackgroundService
     {
         _twitchEventSub.OnWsNotification += (Guid authUuid, JsonElement json) =>
         {
-            if (!json.TryGetProperty("payload", out var payloadProp))
+            if (!json.TryGetProperty("payload", out JsonElement payloadProp))
                 return;
-            if (!payloadProp.TryGetProperty("subscription", out var subscriptionProp))
+            if (!payloadProp.TryGetProperty("subscription", out JsonElement subscriptionProp))
                 return;
-            if (!subscriptionProp.TryGetProperty("type", out var typeProp))
+            if (!subscriptionProp.TryGetProperty("type", out JsonElement typeProp))
                 return;
             if (typeProp.ValueKind != JsonValueKind.String)
                 return;
@@ -57,7 +57,7 @@ public class TwitchRewardsService : BackgroundService
 
             Task.Run(async () =>
             {
-                var auth = await _twitchAuth.GetRestoredByUuid(authUuid);
+                TwitchAuthModel? auth = await _twitchAuth.GetRestoredByUuid(authUuid);
                 if (auth is not null)
                 {
                     _logger.LogInformation("[{AuthUsername}] Got WS Notification, processing {RedemptionType}", auth.Username, typeProp.GetString());
@@ -70,15 +70,15 @@ public class TwitchRewardsService : BackgroundService
         {
             try
             {
-                var localRewards = await _db.TwitchCustomRewards.Where(x => x.IsCreated).ToArrayAsync(ct);
-                var authUuids = localRewards.Select(x => x.AuthUuid).ToArray();
-                var auths = new TwitchAuthModel?[authUuids.Length];
+                TwitchCustomRewardModel[] localRewards = await _db.TwitchCustomRewards.Where(x => x.IsCreated).ToArrayAsync(ct);
+                Guid[] authUuids = localRewards.Select(x => x.AuthUuid).ToArray();
+                TwitchAuthModel[] auths = new TwitchAuthModel?[authUuids.Length];
                 for (int i = 0; i < authUuids.Length; i++)
                     auths[i] = await _twitchAuth.GetRestoredByUuid(authUuids[i]);
 
-                foreach (var authUuid in _connectedAuthUuids.ToArray())
+                foreach (Guid authUuid in _connectedAuthUuids.ToArray())
                 {
-                    var auth = auths.FirstOrDefault(x => x?.Uuid == authUuid);
+                    TwitchAuthModel? auth = auths.FirstOrDefault(x => x?.Uuid == authUuid);
                     if (auth is null)
                     {
                         auth = await _twitchAuth.GetRestoredByUuid(authUuid);
@@ -90,7 +90,7 @@ public class TwitchRewardsService : BackgroundService
 
                 if (TimeSpan.FromHours(2) < DateTimeOffset.UtcNow - _lastSync)
                 {
-                    foreach (var auth in auths)
+                    foreach (TwitchAuthModel? auth in auths)
                     {
                         if (auth is null)
                             continue;
@@ -100,7 +100,7 @@ public class TwitchRewardsService : BackgroundService
                     _lastSync = DateTimeOffset.UtcNow;
                 }
 
-                foreach (var auth in auths)
+                foreach (TwitchAuthModel? auth in auths)
                 {
                     if (auth is null)
                         continue;
@@ -139,18 +139,18 @@ public class TwitchRewardsService : BackgroundService
     {
         try
         {
-            var localRewards = await _db.TwitchCustomRewards.Where(x => x.IsCreated && x.AuthUuid == auth.Uuid).ToArrayAsync();
-            var redemptions = await GetRedemptions(auth);
-            foreach (var redemption in redemptions)
+            TwitchCustomRewardModel[] localRewards = await _db.TwitchCustomRewards.Where(x => x.IsCreated && x.AuthUuid == auth.Uuid).ToArrayAsync();
+            List<Redemption> redemptions = await GetRedemptions(auth);
+            foreach (Redemption? redemption in redemptions)
             {
-                var botAuth = await _db.TwitchAuth.FirstOrDefaultAsync(x => x.Uuid == redemption.bot_auth_uuid);
+                TwitchAuthModel? botAuth = await _db.TwitchAuth.FirstOrDefaultAsync(x => x.Uuid == redemption.bot_auth_uuid);
                 if (botAuth is null)
                 {
                     await Cancel(auth, redemption.reward_type, redemption.id);
                     _logger.LogError("[{AuthUsername}] Bot auth not found for {RewardType}", auth.Username, redemption.reward_type);
                     continue;
                 }
-                var localReward = localRewards.FirstOrDefault(x => x.RewardType == redemption.reward_type);
+                TwitchCustomRewardModel? localReward = localRewards.FirstOrDefault(x => x.RewardType == redemption.reward_type);
                 if (localReward is null)
                 {
                     await Cancel(auth, redemption.reward_type, redemption.id);
@@ -164,7 +164,7 @@ public class TwitchRewardsService : BackgroundService
                 {
                     case ERewardType.Add7TvEmote:
                         {
-                            var res = await ProcessAdd7TvEmote(auth, redemption);
+                            (bool success, string message) res = await ProcessAdd7TvEmote(auth, redemption);
                             if (res.success)
                                 await Fulfill(auth, redemption.reward_type, redemption.id);
                             else
@@ -189,12 +189,12 @@ public class TwitchRewardsService : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(redemption.user_input))
             return (false, "You were supposed to enter valid link for a 7Tv emote");
-        if (!Uri.TryCreate(redemption.user_input, UriKind.Absolute, out var uri))
+        if (!Uri.TryCreate(redemption.user_input, UriKind.Absolute, out Uri? uri))
             return (false, "You were supposed to enter valid link for a 7Tv emote");
         if (uri.Host != "7tv.app" || uri.Segments.Length < 3 || uri.Segments[1] != "emotes/")
             return (false, "Link format is incorrect. Enter a valid link for a 7Tv emote");
 
-        var (res, message) = await _sevenTv.AddEmoteToDefaultSet(uri.Segments[2]);
+        (bool res, string? message) = await _sevenTv.AddEmoteToDefaultSet(uri.Segments[2]);
         if (res)
             _emotes.ResetChannelCache(auth.UserId, auth.Username);
 
@@ -203,9 +203,9 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<bool> Sync(TwitchAuthModel auth)
     {
-        var localRewards = await _db.TwitchCustomRewards.Where(x => x.AuthUuid == auth.Uuid).ToArrayAsync();
-        var rewardTypes = new Dictionary<ERewardType, List<TwitchCustomRewardModel>>();
-        foreach (var localReward in localRewards)
+        TwitchCustomRewardModel[] localRewards = await _db.TwitchCustomRewards.Where(x => x.AuthUuid == auth.Uuid).ToArrayAsync();
+        Dictionary<ERewardType, List<TwitchCustomRewardModel>> rewardTypes = new();
+        foreach (TwitchCustomRewardModel? localReward in localRewards)
         {
             if (rewardTypes.ContainsKey(localReward.RewardType))
                 rewardTypes[localReward.RewardType].Add(localReward);
@@ -214,7 +214,7 @@ public class TwitchRewardsService : BackgroundService
         }
 
         // Remove duplicate rewards in database
-        foreach ((var type, var list) in rewardTypes)
+        foreach ((ERewardType type, List<TwitchCustomRewardModel>? list) in rewardTypes)
         {
             if (1 < list.Count)
             {
@@ -227,12 +227,12 @@ public class TwitchRewardsService : BackgroundService
         }
 
         // Create local rewards of missing types
-        foreach (var type in Enum.GetValues<ERewardType>())
+        foreach (ERewardType type in Enum.GetValues<ERewardType>())
         {
             if (rewardTypes.ContainsKey(type))
                 continue;
 
-            var localReward = new TwitchCustomRewardModel
+            TwitchCustomRewardModel localReward = new()
             {
                 Uuid = Guid.NewGuid(),
                 AuthUuid = auth.Uuid,
@@ -272,23 +272,23 @@ public class TwitchRewardsService : BackgroundService
         await _db.SaveChangesAsync();
 
         // Sync local and remote rewards
-        var remoteRewards = await _twitchApi.GetCustomRewardsList(auth);
+        TwitchApiResponse<TwitchCustomReward>? remoteRewards = await _twitchApi.GetCustomRewardsList(auth);
         if (remoteRewards is null || !remoteRewards.IsSuccessStatusCode)
         {
             _logger.LogWarning("[{AuthUsername}] Failed to get rewards list ({StatusCode})", auth.Username, remoteRewards?.StatusCode.ToString() ?? "NULL");
             return false;
         }
 
-        foreach (var localReward in localRewards)
+        foreach (TwitchCustomRewardModel? localReward in localRewards)
         {
             if (localReward.TwitchId is null && localReward.IsCreated)
                 localReward.IsCreated = false;
             else if (localReward.IsCreated)
             {
-                var remoteReward = remoteRewards.data.FirstOrDefault(x => x.id == localReward.TwitchId);
+                TwitchCustomReward? remoteReward = remoteRewards.data.FirstOrDefault(x => x.id == localReward.TwitchId);
                 if (remoteReward is null)
                 {
-                    var remoteRewardRes = await _twitchApi.CreateCustomReward(auth, new()
+                    TwitchApiResponse<TwitchCustomReward>? remoteRewardRes = await _twitchApi.CreateCustomReward(auth, new()
                     {
                         title = localReward.Title,
                         cost = localReward.Cost,
@@ -318,7 +318,7 @@ public class TwitchRewardsService : BackgroundService
             }
             else if (localReward.TwitchId is not null && remoteRewards.data.Any(x => x.id == localReward.TwitchId))
             {
-                var statusCode = await _twitchApi.DeleteCustomReward(auth, localReward.TwitchId);
+                int statusCode = await _twitchApi.DeleteCustomReward(auth, localReward.TwitchId);
                 if (statusCode % 100 == 2)
                     _logger.LogInformation("[{AuthUsername}] Remote reward of type {RewardType} has been deleted. Deletion reason: localReward.IsCreated == false", auth.Username, localReward.RewardType);
                 else
@@ -327,11 +327,11 @@ public class TwitchRewardsService : BackgroundService
         }
 
         // Remove remote rewards that is not in local database
-        foreach (var remoteReward in remoteRewards.data)
+        foreach (TwitchCustomReward? remoteReward in remoteRewards.data)
         {
             if (!localRewards.Any(x => x.TwitchId == remoteReward.id))
             {
-                var statusCode = await _twitchApi.DeleteCustomReward(auth, remoteReward.id);
+                int statusCode = await _twitchApi.DeleteCustomReward(auth, remoteReward.id);
                 if (statusCode % 100 == 2)
                     _logger.LogInformation("[{AuthUsername}] Remote reward has been deleted. Deletion reason: Unknown type", auth.Username);
                 else
@@ -339,7 +339,7 @@ public class TwitchRewardsService : BackgroundService
             }
             else
             {
-                var req = remoteReward.ToReq();
+                CustomRewardReq req = remoteReward.ToReq();
                 req.is_paused = false;
                 req.is_enabled = true;
 
@@ -354,7 +354,7 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<TwitchCustomRewardModel?> Get(TwitchAuthModel auth, ERewardType type)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
         if (localReward is null)
         {
             if (!await Sync(auth))
@@ -369,7 +369,7 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<bool> Enable(TwitchAuthModel auth, TwitchAuthModel botAuth, ERewardType type)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
         if (localReward is null)
         {
             if (!await Sync(auth))
@@ -397,7 +397,7 @@ public class TwitchRewardsService : BackgroundService
             return false;
         }
 
-        var remoteRewardRes = await _twitchApi.CreateCustomReward(auth, new()
+        TwitchApiResponse<TwitchCustomReward>? remoteRewardRes = await _twitchApi.CreateCustomReward(auth, new()
         {
             title = localReward.Title,
             cost = localReward.Cost,
@@ -436,7 +436,7 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<bool> Update(TwitchAuthModel auth, TwitchAuthModel botAuth, TwitchCustomRewardModel reward)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == reward.RewardType && x.AuthUuid == auth.Uuid);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == reward.RewardType && x.AuthUuid == auth.Uuid);
         if (localReward is null)
         {
             if (!await Sync(auth))
@@ -464,9 +464,9 @@ public class TwitchRewardsService : BackgroundService
 
         await _db.SaveChangesAsync();
 
-        if (localReward.IsCreated && localReward.TwitchId is not null)
+        if (localReward is { IsCreated: true, TwitchId: not null })
         {
-            var remoteRewardRes = await _twitchApi.UpdateCustomReward(auth, localReward.TwitchId, new()
+            TwitchApiResponse<TwitchCustomReward>? remoteRewardRes = await _twitchApi.UpdateCustomReward(auth, localReward.TwitchId, new()
             {
                 title = localReward.Title,
                 cost = localReward.Cost,
@@ -488,7 +488,7 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<bool> Disable(TwitchAuthModel auth, TwitchAuthModel botAuth, ERewardType type)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.RewardType == type && x.AuthUuid == auth.Uuid);
         if (localReward is null)
         {
             if (!await Sync(auth))
@@ -528,17 +528,17 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<List<Redemption>> GetRedemptions(TwitchAuthModel auth)
     {
-        var localRewards = await _db.TwitchCustomRewards.Where(x => x.AuthUuid == auth.Uuid && x.IsCreated).ToArrayAsync();
-        var redemptions = new List<Redemption>();
-        foreach (var localReward in localRewards)
+        TwitchCustomRewardModel[] localRewards = await _db.TwitchCustomRewards.Where(x => x.AuthUuid == auth.Uuid && x.IsCreated).ToArrayAsync();
+        List<Redemption> redemptions = [];
+        foreach (TwitchCustomRewardModel? localReward in localRewards)
         {
             if (localReward.TwitchId is null)
                 continue;
 
-            var res = await _twitchApi.GetFirstUnfulfilledRedemption(auth, localReward.TwitchId);
+            TwitchApiResponse<Redemption>? res = await _twitchApi.GetFirstUnfulfilledRedemption(auth, localReward.TwitchId);
             if (res is not null && res.IsSuccessStatusCode)
             {
-                foreach (var redemption in res.data)
+                foreach (Redemption? redemption in res.data)
                 {
                     redemption.reward_type = localReward.RewardType;
                     redemption.bot_auth_uuid = localReward.BotAuthUuid.HasValue ? localReward.BotAuthUuid.Value : null;
@@ -553,27 +553,27 @@ public class TwitchRewardsService : BackgroundService
 
     public async Task<bool> Fulfill(TwitchAuthModel auth, ERewardType type, string redemptionId)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.AuthUuid == auth.Uuid && x.RewardType == type && x.IsCreated);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.AuthUuid == auth.Uuid && x.RewardType == type && x.IsCreated);
         if (localReward?.TwitchId is null)
         {
             _logger.LogError("[{AuthUsername}] Failed to fulfill custom reward of type {CustomRewardType}", auth.Username, type);
             return false;
         }
 
-        var res = await _twitchApi.UpdateRedemptionStatus(auth, localReward.TwitchId, redemptionId, ERedemptionStatus.FULFILLED);
+        TwitchApiResponse<Redemption>? res = await _twitchApi.UpdateRedemptionStatus(auth, localReward.TwitchId, redemptionId, ERedemptionStatus.FULFILLED);
         return res?.IsSuccessStatusCode ?? false;
     }
 
     public async Task<bool> Cancel(TwitchAuthModel auth, ERewardType type, string redemptionId)
     {
-        var localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.AuthUuid == auth.Uuid && x.RewardType == type && x.IsCreated);
+        TwitchCustomRewardModel? localReward = await _db.TwitchCustomRewards.FirstOrDefaultAsync(x => x.AuthUuid == auth.Uuid && x.RewardType == type && x.IsCreated);
         if (localReward?.TwitchId is null)
         {
             _logger.LogError("[{AuthUsername}] Failed to fulfill custom reward of type {CustomRewardType}", auth.Username, type);
             return false;
         }
 
-        var res = await _twitchApi.UpdateRedemptionStatus(auth, localReward.TwitchId, redemptionId, ERedemptionStatus.CANCELED);
+        TwitchApiResponse<Redemption>? res = await _twitchApi.UpdateRedemptionStatus(auth, localReward.TwitchId, redemptionId, ERedemptionStatus.CANCELED);
         return res?.IsSuccessStatusCode ?? false;
     }
 

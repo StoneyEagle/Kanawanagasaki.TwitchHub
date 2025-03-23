@@ -1,6 +1,8 @@
+using Kanawanagasaki.TwitchHub.Models;
+
 namespace Kanawanagasaki.TwitchHub.Pages;
 
-using Kanawanagasaki.TwitchHub.Services;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using TwitchLib.PubSub;
@@ -19,28 +21,25 @@ public partial class FollowerAlert : ComponentBase, IDisposable
     [Parameter]
     [SupplyParameterFromQuery]
     public string? Channel { get; set; }
-    public string? _cacheChannel = null;
+    public string? _cacheChannel;
 
     private TwitchPubSub? _pubSub;
 
-    private List<TwitchGetUsersResponse> _followersQueue = new()
-    {
-        new TwitchGetUsersResponse("", "", "", "", "", "", "", "", "", "", "")
-    };
+    private List<TwitchGetUsersResponse> _followersQueue = [new("", "", "", "", "", "", "", "", "", "", "")];
 
     private bool _isRunning = true;
-    private bool _isSimulationAllowed = false;
+    private bool _isSimulationAllowed;
 
     private ElementReference _ref;
-    private bool _isSimulating = false;
-    private TwitchGetUsersResponse? _droppedUser = null;
+    private bool _isSimulating;
+    private TwitchGetUsersResponse? _droppedUser;
     private DateTime _simulationStart;
-    private int _width = 0;
-    private int _height = 0;
+    private int _width;
+    private int _height;
     private double _x = 0;
     private double _y = 0;
 
-    private List<(double x, double y)> _points = new();
+    private List<(double x, double y)> _points = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -73,7 +72,7 @@ public partial class FollowerAlert : ComponentBase, IDisposable
         if (string.IsNullOrWhiteSpace(Channel))
             return;
 
-        var model = await TwAuth.GetRestored(Channel);
+        TwitchAuthModel? model = await TwAuth.GetRestored(Channel);
 
         if (model is null || !model.IsValid)
         {
@@ -81,7 +80,7 @@ public partial class FollowerAlert : ComponentBase, IDisposable
             return;
         }
 
-        _pubSub = new TwitchPubSub();
+        _pubSub = new();
 
         _pubSub.OnPubSubServiceConnected += (obj, ev) =>
         {
@@ -94,7 +93,7 @@ public partial class FollowerAlert : ComponentBase, IDisposable
 
             Task.Run(async () =>
             {
-                var user = await TwApi.GetUser(model.AccessToken, ev.UserId);
+                TwitchGetUsersResponse? user = await TwApi.GetUser(model.AccessToken, ev.UserId);
                 if (user is not null)
                     lock (_followersQueue)
                         _followersQueue.Add(user);

@@ -5,7 +5,7 @@
     {
         <div class='ball' style='top: @(_y)%; left: @(_x)%;'></div>
     }
-    @foreach (var point in _points)
+    @foreach ((double x, double y) point in _points)
     {
         <div class='ball' style='top: @(point.y)%; left: @(point.x)%;'></div>
     }

@@ -1,11 +1,10 @@
 namespace Kanawanagasaki.TwitchHub.Components;
 
 using System.Threading.Tasks;
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
-using TwitchLib.PubSub;
 
 public partial class TwitchFollowersCounter : ComponentBase, IDisposable
 {
@@ -42,7 +41,7 @@ public partial class TwitchFollowersCounter : ComponentBase, IDisposable
         {
             if (!string.IsNullOrWhiteSpace(ChannelId))
             {
-                var model = await Db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == ChannelId);
+                TwitchAuthModel? model = await Db.TwitchAuth.FirstOrDefaultAsync(m => m.UserId == ChannelId);
                 if(model is not null)
                     await UpdateCount(model);
             }

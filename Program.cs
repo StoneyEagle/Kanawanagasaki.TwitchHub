@@ -9,12 +9,12 @@ using Kanawanagasaki.TwitchHub.Hubs;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-var ci = new CultureInfo("ja-JP");
+CultureInfo ci = new("ja-JP");
 CultureInfo.DefaultThreadCurrentCulture = ci;
 Thread.CurrentThread.CurrentCulture = ci;
 Thread.CurrentThread.CurrentUICulture = ci;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(logging =>
     logging.AddSimpleConsole(options =>
@@ -57,11 +57,11 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<TtsService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TwitchEventSubService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TwitchRewardsService>());
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 app.UseCors("musicyoutubecom");
 
-using var rootScope = app.Services.CreateScope();
+using IServiceScope rootScope = app.Services.CreateScope();
 rootScope.ServiceProvider.GetRequiredService<SQLiteContext>().Database.Migrate();
 
 if (!app.Environment.IsDevelopment())
@@ -79,13 +79,13 @@ app.MapHub<YoutubeHub>("/hubs/Youtube");
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
-var appTask = app.RunAsync();
+Task appTask = app.RunAsync();
 
-var cts = new CancellationTokenSource();
+CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, _) =>
 {
     cts.Cancel();
-    var handle = GetStdHandle(-10);
+    IntPtr handle = GetStdHandle(-10);
     CancelIoEx(handle, IntPtr.Zero);
 };
 
@@ -115,7 +115,7 @@ while (!cts.IsCancellationRequested)
         if (string.IsNullOrWhiteSpace(line))
             continue;
 
-        var words = line.Split(' ');
+        string[] words = line.Split(' ');
         switch (words[0])
         {
             case "twitch":
@@ -135,15 +135,15 @@ while (!cts.IsCancellationRequested)
                                 break;
                             }
 
-                            var twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
-                            var auth = await twitchAuth.GetRestored(words[2]);
+                            TwitchAuthService twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
+                            TwitchAuthModel? auth = await twitchAuth.GetRestored(words[2]);
                             if (auth is null || !auth.IsValid)
                             {
                                 Console.WriteLine("Cannot authenticate " + words[2]);
                                 break;
                             }
 
-                            var twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
+                            TwitchChatMessagesService twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
                             twitchChat.Connect(auth, words[3]);
 
                             break;
@@ -156,15 +156,15 @@ while (!cts.IsCancellationRequested)
                                 break;
                             }
 
-                            var twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
-                            var auth = await twitchAuth.GetRestored(words[2]);
+                            TwitchAuthService twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
+                            TwitchAuthModel? auth = await twitchAuth.GetRestored(words[2]);
                             if (auth is null)
                             {
                                 Console.WriteLine("Cannot authenticate " + words[2]);
                                 break;
                             }
 
-                            var twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
+                            TwitchChatMessagesService twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
                             if (3 < words.Length)
                                 twitchChat.Disconnect(auth, words[3]);
                             else
@@ -180,7 +180,7 @@ while (!cts.IsCancellationRequested)
                                 break;
                             }
 
-                            var twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
+                            TwitchChatMessagesService twitchChat = rootScope.ServiceProvider.GetRequiredService<TwitchChatMessagesService>();
                             twitchChat.SendMessage(words[2], words[3], string.Join(" ", words.Skip(4)));
 
                             break;
@@ -202,15 +202,15 @@ while (!cts.IsCancellationRequested)
                                             Console.WriteLine("twitch rewards sync <channel>");
                                             break;
                                         }
-                                        var twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
-                                        var auth = await twitchAuth.GetRestored(words[3]);
+                                        TwitchAuthService twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
+                                        TwitchAuthModel? auth = await twitchAuth.GetRestored(words[3]);
                                         if (auth is null || !auth.IsValid)
                                         {
                                             Console.WriteLine("Cannot authenticate " + words[4]);
                                             break;
                                         }
 
-                                        var rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
+                                        TwitchRewardsService rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
                                         if (await rewards.Sync(auth))
                                             Console.WriteLine("Rewards have been successfully synchronized");
                                         else
@@ -230,29 +230,29 @@ while (!cts.IsCancellationRequested)
                                             break;
                                         }
 
-                                        var twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
+                                        TwitchAuthService twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
 
-                                        var botAuth = await twitchAuth.GetRestored(words[3]);
+                                        TwitchAuthModel? botAuth = await twitchAuth.GetRestored(words[3]);
                                         if (botAuth is null || !botAuth.IsValid)
                                         {
                                             Console.WriteLine("Cannot authenticate " + words[3]);
                                             break;
                                         }
 
-                                        var auth = await twitchAuth.GetRestored(words[4]);
+                                        TwitchAuthModel? auth = await twitchAuth.GetRestored(words[4]);
                                         if (auth is null || !auth.IsValid)
                                         {
                                             Console.WriteLine("Cannot authenticate " + words[4]);
                                             break;
                                         }
 
-                                        if (!Enum.TryParse<ERewardType>(words[5], out var rewardType))
+                                        if (!Enum.TryParse<ERewardType>(words[5], out ERewardType rewardType))
                                         {
                                             Console.WriteLine("Unknown type: " + words[5]);
                                             break;
                                         }
 
-                                        var rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
+                                        TwitchRewardsService rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
                                         if (await rewards.Enable(auth, botAuth, rewardType))
                                             Console.WriteLine($"{rewardType} enabled");
                                         else
@@ -273,29 +273,29 @@ while (!cts.IsCancellationRequested)
                                             break;
                                         }
 
-                                        var twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
+                                        TwitchAuthService twitchAuth = rootScope.ServiceProvider.GetRequiredService<TwitchAuthService>();
 
-                                        var botAuth = await twitchAuth.GetRestored(words[3]);
+                                        TwitchAuthModel? botAuth = await twitchAuth.GetRestored(words[3]);
                                         if (botAuth is null || !botAuth.IsValid)
                                         {
                                             Console.WriteLine("Cannot authenticate " + words[3]);
                                             break;
                                         }
 
-                                        var auth = await twitchAuth.GetRestored(words[4]);
+                                        TwitchAuthModel? auth = await twitchAuth.GetRestored(words[4]);
                                         if (auth is null || !auth.IsValid)
                                         {
                                             Console.WriteLine("Cannot authenticate " + words[4]);
                                             break;
                                         }
 
-                                        if (!Enum.TryParse<ERewardType>(words[5], out var rewardType))
+                                        if (!Enum.TryParse<ERewardType>(words[5], out ERewardType rewardType))
                                         {
                                             Console.WriteLine("Unknown type: " + words[5]);
                                             break;
                                         }
 
-                                        var rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
+                                        TwitchRewardsService rewards = rootScope.ServiceProvider.GetRequiredService<TwitchRewardsService>();
                                         if (await rewards.Disable(auth, botAuth, rewardType))
                                             Console.WriteLine($"{rewardType} enabled");
                                         else
@@ -324,7 +324,7 @@ while (!cts.IsCancellationRequested)
                     break;
                 }
 
-                var tts = rootScope.ServiceProvider.GetRequiredService<TtsService>();
+                TtsService tts = rootScope.ServiceProvider.GetRequiredService<TtsService>();
                 switch (words[1])
                 {
                     case "enable":
@@ -345,7 +345,7 @@ while (!cts.IsCancellationRequested)
                     break;
                 }
 
-                var sevenTv = rootScope.ServiceProvider.GetRequiredService<SevenTvApiService>();
+                SevenTvApiService sevenTv = rootScope.ServiceProvider.GetRequiredService<SevenTvApiService>();
                 switch (words[1])
                 {
                     case "authenticate":
@@ -354,7 +354,7 @@ while (!cts.IsCancellationRequested)
                             Console.WriteLine("7tv authenticate <token>");
                             break;
                         }
-                        var token = string.Join(" ", words.Skip(2));
+                        string token = string.Join(" ", words.Skip(2));
                         await sevenTv.Authenticate(token);
                         break;
                     case "addemote":
@@ -363,8 +363,8 @@ while (!cts.IsCancellationRequested)
                             Console.WriteLine("7tv addemote <emoteid>");
                             break;
                         }
-                        var emoteId = string.Join(" ", words.Skip(2));
-                        var (_, addEmoteMessage) = await sevenTv.AddEmoteToDefaultSet(emoteId);
+                        string emoteId = string.Join(" ", words.Skip(2));
+                        (_, string addEmoteMessage) = await sevenTv.AddEmoteToDefaultSet(emoteId);
                         Console.WriteLine(addEmoteMessage);
                         break;
                     default:

@@ -22,14 +22,14 @@ public class JsEnginesService : IDisposable
         if (_engines.TryGetValue(channel, out engine))
             return engine;
 
-        engine = new JsEngine(_db, channel);
+        engine = new(_db, channel);
         _engines.AddOrUpdate(channel, engine, (_, _) => engine);
         return engine;
     }
 
     public void Dispose()
     {
-        foreach (var kv in _engines.Values)
+        foreach (JsEngine? kv in _engines.Values)
             kv.Dispose();
         _engines.Clear();
     }

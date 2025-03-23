@@ -1,6 +1,6 @@
 namespace Kanawanagasaki.TwitchHub.Services.Commands;
 
-using Kanawanagasaki.TwitchHub.Data;
+using Data;
 
 public class PingCommand : ACommand
 {

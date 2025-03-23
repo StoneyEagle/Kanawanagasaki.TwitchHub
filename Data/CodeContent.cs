@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.JSInterop;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -36,15 +37,15 @@ public class CodeContent
 
     private async Task<CSLine[]?> Prettier(IJSRuntime js)
     {
-        string[] availableLanguages = new[] { "typescript", "css", "json", "html" };
+        string[] availableLanguages = ["typescript", "css", "json", "html"];
         if (!availableLanguages.Contains(Language.slug))
             return null;
 
-        var result = await js.InvokeAsync<string>("prettierFormat", Language.slug, Code);
+        string result = await js.InvokeAsync<string>("prettierFormat", Language.slug, Code);
         if (string.IsNullOrWhiteSpace(result))
             return null;
 
-        var lines = result.Trim().Split("\n");
+        string[] lines = result.Trim().Split("\n");
         return lines.Select(l => new CSLine(l.Trim()) { Indent = l.TakeWhile(Char.IsWhiteSpace).Count() }).ToArray();
     }
 
@@ -73,15 +74,15 @@ public class CodeContent
             { "columnLimit", "160" }
         };
 
-        using var form = new StringContent(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-        var response = await http.PostAsync("https://formatter.org/admin/format", form);
+        using StringContent form = new(JsonConvert.SerializeObject(data), Encoding.UTF8, "application/json");
+        using HttpClient http = new() { Timeout = TimeSpan.FromSeconds(2) };
+        HttpResponseMessage response = await http.PostAsync("https://formatter.org/admin/format", form);
         if (response.StatusCode == System.Net.HttpStatusCode.OK)
         {
-            var json = await response.Content.ReadAsStringAsync();
-            var result = JsonConvert.DeserializeObject<JObject>(json);
-            var parsedCode = result?.Value<string>("codeDst") ?? string.Empty;
-            var lines = parsedCode.Split("\n");
+            string json = await response.Content.ReadAsStringAsync();
+            JObject? result = JsonConvert.DeserializeObject<JObject>(json);
+            string parsedCode = result?.Value<string>("codeDst") ?? string.Empty;
+            string[] lines = parsedCode.Split("\n");
             return lines.Select(l => new CSLine(l.Trim()) { Indent = l.TakeWhile(Char.IsWhiteSpace).Count() }).ToArray();
         }
 
@@ -90,7 +91,7 @@ public class CodeContent
 
     private CSLine[] DefaultFormatter()
     {
-        var lines = Code
+        List<CSLine> lines = Code
             .Replace("{", "\n{\n")
             .Replace("}", "\n}\n")
             .Replace(";", ";\n")
@@ -99,7 +100,7 @@ public class CodeContent
             .Select(l => new CSLine(l.Trim()))
             .ToList();
 
-        var regex = new System.Text.RegularExpressions.Regex("[a-z0-9\\{\\}]");
+        Regex regex = new("[a-z0-9\\{\\}]");
 
         int indent = 0;
         for (int i = 0; i < lines.Count; i++)
@@ -128,7 +129,7 @@ public class CodeContent
 public class CSLine
 {
     public string Text { get; set; }
-    public int Indent { get; set; } = 0;
+    public int Indent { get; set; }
 
     public CSLine(string text) => Text = text;
 

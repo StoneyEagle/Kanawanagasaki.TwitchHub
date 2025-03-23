@@ -1,3 +1,5 @@
+using System.Collections.Specialized;
+
 namespace Kanawanagasaki.TwitchHub.Services;
 
 using System;
@@ -8,12 +10,10 @@ using System.Text.RegularExpressions;
 using System.Web;
 using HtmlAgilityPack;
 using HtmlAgilityPack.CssSelectors.NetCore;
-using Kanawanagasaki.TwitchHub.Data;
-using Kanawanagasaki.TwitchHub.Models;
-using Microsoft.AspNetCore.Http.Features;
+using Data;
+using Models;
 using TwitchLib.Client;
 using TwitchLib.Client.Events;
-using TwitchLib.Client.Extensions;
 using TwitchLib.Communication.Events;
 
 public class TwitchChatMessagesService
@@ -64,7 +64,7 @@ public class TwitchChatMessagesService
         if (_botnameToClient.ContainsKey(botAuth.Username.ToLower()))
             return;
 
-        var client = _chat.GetClient(botAuth, this, channel);
+        TwitchClient client = _chat.GetClient(botAuth, this, channel);
         client.OnMessageReceived += MessageReceived;
         client.OnMessageCleared += MessageDeleted;
         client.OnUserTimedout += UserTimeout;
@@ -76,19 +76,19 @@ public class TwitchChatMessagesService
 
     public void SendMessage(string botname, string channel, string message)
     {
-        if (_botnameToClient.TryGetValue(botname.ToLower(), out var item))
+        if (_botnameToClient.TryGetValue(botname.ToLower(), out (TwitchClient client, TwitchAuthModel botAuth) item))
             item.client.SendMessage(channel, message);
     }
 
     public void SendMessage(string botname, string channel, string replyId, string message)
     {
-        if (_botnameToClient.TryGetValue(botname.ToLower(), out var item))
+        if (_botnameToClient.TryGetValue(botname.ToLower(), out (TwitchClient client, TwitchAuthModel botAuth) item))
             item.client.SendReply(channel, replyId, message);
     }
 
     public void Disconnect(TwitchAuthModel botAuth)
     {
-        if (!_botnameToClient.TryRemove(botAuth.Username.ToLower(), out var item))
+        if (!_botnameToClient.TryRemove(botAuth.Username.ToLower(), out (TwitchClient client, TwitchAuthModel botAuth) item))
             return;
 
         item.client.OnMessageReceived -= MessageReceived;
@@ -102,7 +102,7 @@ public class TwitchChatMessagesService
 
     public void Disconnect(TwitchAuthModel botAuth, string channel)
     {
-        if (!_botnameToClient.TryGetValue(botAuth.Username.ToLower(), out var item))
+        if (!_botnameToClient.TryGetValue(botAuth.Username.ToLower(), out (TwitchClient client, TwitchAuthModel botAuth) item))
             return;
 
         item.client.LeaveChannel(channel);
@@ -124,7 +124,7 @@ public class TwitchChatMessagesService
     {
         _logger.LogInformation($"{ev.ChatMessage.DisplayName}: {ev.ChatMessage.Message}");
 
-        if (!_botnameToClient.TryGetValue(ev.ChatMessage.BotUsername.ToLower(), out var item))
+        if (!_botnameToClient.TryGetValue(ev.ChatMessage.BotUsername.ToLower(), out (TwitchClient client, TwitchAuthModel botAuth) item))
         {
             _logger.LogError("Unregistered bot {BotName} received a message", ev.ChatMessage.BotUsername);
             return;
@@ -134,59 +134,59 @@ public class TwitchChatMessagesService
         {
             try
             {
-                var res = await _commands.ProcessMessage(item.botAuth, ev.ChatMessage, this);
+                ProcessedChatMessage res = await _commands.ProcessMessage(item.botAuth, ev.ChatMessage, this);
 
                 if (!res.IsCommand)
                 {
                     #region Checking for url
-                    var split = ev.ChatMessage.Message.Split(" ");
-                    foreach (var word in split)
+                    string[] split = ev.ChatMessage.Message.Split(" ");
+                    foreach (string? word in split)
                     {
-                        if (!Uri.TryCreate(word, UriKind.Absolute, out var uri))
+                        if (!Uri.TryCreate(word, UriKind.Absolute, out Uri? uri))
                             continue;
                         if (uri.Scheme != "http" && uri.Scheme != "https")
                             continue;
 
                         try
                         {
-                            var handler = new HttpClientHandler
+                            HttpClientHandler handler = new()
                             {
                                 Proxy = new WebProxy
                                 {
-                                    Address = new Uri("socks5://192.168.0.51:12345")
+                                    Address = new("socks5://192.168.0.51:12345")
                                 }
                             };
-                            using HttpClient http = new HttpClient(handler);
+                            using HttpClient http = new(handler);
                             http.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.74 Safari/537.36 Edg/99.0.1150.46 Kanawanagasaki/1 (Gimme your html please)");
-                            var response = await http.GetAsync(uri);
+                            HttpResponseMessage response = await http.GetAsync(uri);
                             if (!response.IsSuccessStatusCode)
                                 continue;
 
                             if (response.Content.Headers.ContentType?.MediaType == "text/html")
                             {
-                                var html = await response.Content.ReadAsStringAsync();
-                                var doc = new HtmlDocument();
+                                string html = await response.Content.ReadAsStringAsync();
+                                HtmlDocument doc = new();
                                 doc.LoadHtml(html);
 
-                                var query = HttpUtility.ParseQueryString(uri.Query);
+                                NameValueCollection query = HttpUtility.ParseQueryString(uri.Query);
 
                                 if (uri.Host.EndsWith("youtu.be") || (uri.Host.EndsWith("youtube.com") && query.AllKeys.Contains("v")))
                                 {
-                                    var videoId = (uri.Host?.EndsWith("youtu.be") ?? false) ? uri.LocalPath.Substring(1) : query["v"];
+                                    string? videoId = (uri.Host?.EndsWith("youtu.be") ?? false) ? uri.LocalPath.Substring(1) : query["v"];
                                     if (videoId is not null)
                                         res = res.WithYoutubeVideo(videoId);
                                 }
 
-                                var titleTag = doc.QuerySelector("title");
-                                var titleOgTag = doc.QuerySelector("meta[property=og:title]");
-                                var descriptionTag = doc.QuerySelector("meta[name=description]");
-                                var descriptionOgTag = doc.QuerySelector("meta[property=og:description]");
-                                var imageOgTag = doc.QuerySelector("meta[property=og:image]")?.GetAttributeValue("content", "");
+                                HtmlNode? titleTag = doc.QuerySelector("title");
+                                HtmlNode? titleOgTag = doc.QuerySelector("meta[property=og:title]");
+                                HtmlNode? descriptionTag = doc.QuerySelector("meta[name=description]");
+                                HtmlNode? descriptionOgTag = doc.QuerySelector("meta[property=og:description]");
+                                string? imageOgTag = doc.QuerySelector("meta[property=og:image]")?.GetAttributeValue("content", "");
 
                                 if (!string.IsNullOrWhiteSpace(imageOgTag) && Uri.IsWellFormedUriString(imageOgTag, UriKind.Relative))
                                     imageOgTag = uri.Scheme + "://" + uri.Host + imageOgTag;
 
-                                var htmlPreview = new HtmlPreviewCustomContent
+                                HtmlPreviewCustomContent htmlPreview = new()
                                 {
                                     Uri = uri,
                                     Title = titleOgTag is not null
@@ -205,10 +205,10 @@ public class TwitchChatMessagesService
                             }
                             else if (response.Content.Headers.ContentType?.MediaType?.StartsWith("image/") ?? false)
                             {
-                                var peopleThatITrust = new string[] { "ljtech", "stoney_eagle", "vvvvvedma_anna" };
+                                string[] peopleThatITrust = ["ljtech", "stoney_eagle", "vvvvvedma_anna"];
                                 if (ev.ChatMessage.IsBroadcaster || ev.ChatMessage.IsModerator || ev.ChatMessage.IsVip || peopleThatITrust.Contains(ev.ChatMessage.Username))
                                 {
-                                    var bytes = await response.Content.ReadAsByteArrayAsync();
+                                    byte[] bytes = await response.Content.ReadAsByteArrayAsync();
                                     string base64 = $"data:{response.Content.Headers.ContentType.MediaType};base64," + Convert.ToBase64String(bytes);
                                     res = res.WithImage(base64);
                                 }
@@ -229,12 +229,12 @@ public class TwitchChatMessagesService
                     int whitespaceIndex = ev.ChatMessage.Message.IndexOf(' ', backtickIndex + 1);
                     if (backtickIndex >= 0 && whitespaceIndex >= 0 && ev.ChatMessage.Message.Length - backtickIndex >= 5)
                     {
-                        var language = ev.ChatMessage.Message.Substring(backtickIndex + 1, whitespaceIndex - backtickIndex - 1);
+                        string language = ev.ChatMessage.Message.Substring(backtickIndex + 1, whitespaceIndex - backtickIndex - 1);
                         int closingBacktickIndex = ev.ChatMessage.Message.IndexOf('`', backtickIndex + language.Length);
-                        if (CODE_LANGUAGES.TryGetValue(language, out var className) && closingBacktickIndex >= 0)
+                        if (CODE_LANGUAGES.TryGetValue(language, out (string code, string name, string slug) className) && closingBacktickIndex >= 0)
                         {
-                            var code = ev.ChatMessage.Message.Substring(backtickIndex + language.Length + 2, closingBacktickIndex - language.Length - 2 - backtickIndex);
-                            var content = new CodeContent(code, className);
+                            string code = ev.ChatMessage.Message.Substring(backtickIndex + language.Length + 2, closingBacktickIndex - language.Length - 2 - backtickIndex);
+                            CodeContent content = new(code, className);
                             res = res.WithCode(content);
                         }
                     }
@@ -245,20 +245,20 @@ public class TwitchChatMessagesService
 
                 if (res.ShouldReply && !string.IsNullOrWhiteSpace(res.Reply))
                 {
-                    var chunks = SplitMessageIntoChunks(res.Reply, 450);
-                    foreach (var chunk in chunks)
+                    List<string> chunks = SplitMessageIntoChunks(res.Reply, 450);
+                    foreach (string? chunk in chunks)
                         item.client.SendReply(ev.ChatMessage.Channel, res.Original.Id, chunk);
                 }
 
-                var allEmotes = new Dictionary<string, ThirdPartyEmote>();
+                Dictionary<string, ThirdPartyEmote> allEmotes = new();
 
                 try
                 {
-                    var globalEmotes = await _emotes.GetGlobal();
-                    var channelEmotes = await _emotes.GetChannel(ev.ChatMessage.RoomId, ev.ChatMessage.Channel);
-                    foreach (var (k, v) in globalEmotes)
+                    Dictionary<string, ThirdPartyEmote> globalEmotes = await _emotes.GetGlobal();
+                    Dictionary<string, ThirdPartyEmote> channelEmotes = await _emotes.GetChannel(ev.ChatMessage.RoomId, ev.ChatMessage.Channel);
+                    foreach ((string? k, ThirdPartyEmote? v) in globalEmotes)
                         allEmotes[k] = v;
-                    foreach (var (k, v) in channelEmotes)
+                    foreach ((string? k, ThirdPartyEmote? v) in channelEmotes)
                         allEmotes[k] = v;
                 }
                 catch (Exception e)
@@ -302,14 +302,14 @@ public class TwitchChatMessagesService
 
     private List<string> SplitMessageIntoChunks(string message, int chunkLength)
     {
-        var chunks = new List<string>();
+        List<string> chunks = [];
         if (string.IsNullOrEmpty(message) || chunkLength <= 0)
             return chunks;
 
-        var sentences = Regex.Split(message, @"(?<=[.!?])\s+");
-        var currentChunk = new StringBuilder();
+        string[] sentences = Regex.Split(message, @"(?<=[.!?])\s+");
+        StringBuilder currentChunk = new();
 
-        foreach (var sentence in sentences)
+        foreach (string? sentence in sentences)
         {
             if (currentChunk.Length + sentence.Length + 1 <= chunkLength)
             {
@@ -339,10 +339,10 @@ public class TwitchChatMessagesService
     }
     private void SplitSentenceIntoChunks(string sentence, int chunkLength, List<string> chunks)
     {
-        var words = sentence.Split(' ');
-        var currentChunk = new StringBuilder();
+        string[] words = sentence.Split(' ');
+        StringBuilder currentChunk = new();
 
-        foreach (var word in words)
+        foreach (string? word in words)
         {
             if (chunkLength < word.Length)
             {

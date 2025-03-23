@@ -1,12 +1,10 @@
 namespace Kanawanagasaki.TwitchHub.Components;
 
-using Kanawanagasaki.TwitchHub.Data;
-using Kanawanagasaki.TwitchHub.Models;
-using Kanawanagasaki.TwitchHub.Services;
+using Data;
+using Models;
+using Services;
 using Microsoft.AspNetCore.Components;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.JSInterop;
-using TwitchLib.PubSub;
 
 public partial class ChatComponent : ComponentBase, IDisposable
 {
@@ -59,23 +57,23 @@ public partial class ChatComponent : ComponentBase, IDisposable
         Logger.LogDebug("Connecting to {Channel} with {AuthModel.Username} account", Channel, AuthModel.Username);
         TwChat.Connect(AuthModel, Channel);
 
-        var globalBadges = await TwApi.GetGlobalBadges(AuthModel.AccessToken);
+        TwitchDataResponse<TwitchGetChatBadgeResponse>? globalBadges = await TwApi.GetGlobalBadges(AuthModel.AccessToken);
         Badges.Clear();
         if (globalBadges is not null)
         {
-            foreach (var badge in globalBadges.data)
+            foreach (TwitchGetChatBadgeResponse? badge in globalBadges.data)
             {
-                var version = badge.versions.OrderByDescending(v => int.TryParse(v.id, out var id) ? id : 0).First();
+                TwitchGetChatBadgeVersionResponse version = badge.versions.OrderByDescending(v => int.TryParse(v.id, out int id) ? id : 0).First();
                 Badges[badge.set_id] = version.image_url_1x;
             }
         }
 
         if (_channelObj is not null)
         {
-            var channelBadges = await TwApi.GetChannelBadges(AuthModel.AccessToken, _channelObj.id);
-            foreach (var badge in channelBadges?.data ?? [])
+            TwitchDataResponse<TwitchGetChatBadgeResponse>? channelBadges = await TwApi.GetChannelBadges(AuthModel.AccessToken, _channelObj.id);
+            foreach (TwitchGetChatBadgeResponse? badge in channelBadges?.data ?? [])
             {
-                var version = badge.versions.OrderByDescending(v => int.TryParse(v.id, out var id) ? id : 0).First();
+                TwitchGetChatBadgeVersionResponse version = badge.versions.OrderByDescending(v => int.TryParse(v.id, out int id) ? id : 0).First();
                 Badges[badge.set_id] = version.image_url_1x;
             }
         }
@@ -94,12 +92,12 @@ public partial class ChatComponent : ComponentBase, IDisposable
 
             if (!string.IsNullOrWhiteSpace(message.Original.ColorHex))
             {
-                var hsl = Helper.RgbToHsl(Helper.HexToRgb(message.Original.ColorHex));
+                (double h, double s, double l) hsl = Helper.RgbToHsl(Helper.HexToRgb(message.Original.ColorHex));
                 hsl.l += (1 - hsl.l) / 4;
                 message.SetColor($"hsl({hsl.h}, {(int)(hsl.s * 100)}%, {(int)(hsl.l * 100)}%)");
             }
 
-            var user = await TwApi.GetUser(AuthModel.AccessToken, message.Original.UserId);
+            TwitchGetUsersResponse? user = await TwApi.GetUser(AuthModel.AccessToken, message.Original.UserId);
             if (user is null)
             {
                 await TwAuth.Restore(AuthModel);
@@ -109,8 +107,8 @@ public partial class ChatComponent : ComponentBase, IDisposable
             message.SetUser(user);
 
             if (message.Fragments.HasFlag(ProcessedChatMessage.RenderFragments.Code))
-                foreach (var customContent in message.CustomContent)
-                    if (customContent is CodeContent codeContent && !codeContent.IsFormatted)
+                foreach (object? customContent in message.CustomContent)
+                    if (customContent is CodeContent { IsFormatted: false } codeContent)
                         await codeContent.Format(Js);
 
             _messages.Add(message);
@@ -118,7 +116,7 @@ public partial class ChatComponent : ComponentBase, IDisposable
             StateHasChanged();
 
             await Task.Delay(TimeSpan.FromMinutes(1));
-            var component = _components.FirstOrDefault(c => c.Message == message);
+            ChatMessageComponent? component = _components.FirstOrDefault(c => c.Message == message);
             if (component is not null)
                 await component.AnimateAway();
             _messages.Remove(message);

@@ -1,9 +1,12 @@
+using System.Collections.Specialized;
+using Kanawanagasaki.TwitchHub.Models;
+
 namespace Kanawanagasaki.TwitchHub.Services;
 
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Kanawanagasaki.TwitchHub.Data;
+using Data;
 using ImageMagick;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -148,7 +151,7 @@ public class LlamaService
     private DateTimeOffset _appleAccessTokenExpire = DateTimeOffset.MinValue;
 
     private DateTimeOffset _shutdownTime = DateTimeOffset.MinValue;
-    private bool _isFirstMessageAfterShutdown = false;
+    private bool _isFirstMessageAfterShutdown;
 
     public LlamaService(ILogger<LlamaService> logger,
         IServiceScopeFactory serviceScopeFactory,
@@ -176,7 +179,7 @@ public class LlamaService
         List<HistoryItem>? history;
         if (!_messageHistory.TryGetValue(message.Original.Channel, out history))
         {
-            history = new();
+            history = [];
             _messageHistory.AddOrUpdate(message.Original.Channel, history, (_, _) => history);
         }
 
@@ -184,12 +187,12 @@ public class LlamaService
         {
             await _semaphore.WaitAsync();
 
-            var userMessage = string.Empty;
-            var emotesUsed = new Dictionary<string, (string original, string url)>();
-            foreach (var part in message.ParsedMessage)
+            string userMessage = string.Empty;
+            Dictionary<string, (string original, string url)> emotesUsed = new();
+            foreach (ProcessedChatMessage.MessagePart? part in message.ParsedMessage)
             {
-                var processedPart = ConvertNihongoNick(part.Content);
-                if (part.IsEmote && part.EmoteUrl is not null)
+                string processedPart = ConvertNihongoNick(part.Content);
+                if (part is { IsEmote: true, EmoteUrl: not null })
                 {
                     processedPart = $"*{processedPart.ToLower()}*";
                     emotesUsed[processedPart] = (part.Content, part.EmoteUrl);
@@ -197,12 +200,12 @@ public class LlamaService
                 userMessage += processedPart;
             }
 
-            foreach (var (k, v) in emotesUsed)
+            foreach ((string? k, (string original, string url) v) in emotesUsed)
             {
                 if (_emoteDescriptionCache.ContainsKey(k))
                     continue;
 
-                var description = await DescribeImage(v.url);
+                string? description = await DescribeImage(v.url);
                 if (description is not null)
                 {
                     _emoteDescriptionCache[k] = (v.original, description);
@@ -212,7 +215,7 @@ public class LlamaService
                     _logger.LogWarning($"Llava failed to describe {k} emote");
             }
 
-            foreach (var (code, _) in emotesUsed)
+            foreach ((string? code, (string original, string url) _) in emotesUsed)
             {
                 if (!_emoteDescriptionCache.ContainsKey(code))
                     continue;
@@ -258,61 +261,70 @@ public class LlamaService
                 twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, $"[Llama activated]");
             }
 
-            var responseMessage = string.Empty;
-            var assistantRole = "assistant";
+            string responseMessage = string.Empty;
+            string assistantRole = "assistant";
 
-            var extraLore = await _db.Settings.FirstOrDefaultAsync(x => x.Key == "llama_extra_lore");
+            SettingModel? extraLore = await _db.Settings.FirstOrDefaultAsync(x => x.Key == "llama_extra_lore");
 
-            var apiMessages = new List<OllamaMessage>
-            {
+            List<OllamaMessage> apiMessages =
+            [
                 new(
                     "system",
                     $$"""
-                    You are a chat bot on the Kanawanagasaki's twitch channel.
-                    Kanawanagasaki (aka Kana) is He/Him.
-                    Kanawanagasaki have 3 cats:
-                    Luna - black female cat, Scottish Fold breed.
-                    Simba - dark brown male cat, Scottish Fold breed, Luna's brother.
-                    Eva - white female mongrel cat with orange and black spots, oldest cat.
-                    Your nickname is KanawanagasakiBot (aka KanaBot).
-                    You respect viewers who ask questions in chat.
-                    It is {{DateTime.UtcNow:U}} UTC now, {{DateTime.UtcNow:dddd}}.
-                    You was built using LLAMA 3.1 8B model which is used for text processing and LLAVA 1.6 7B model for image recognition via OLLAMA.
-                    seekingtreasure (aka seek) is cute! Her pronounce is she/her.
-                    Regynate (aka regy) sometimes make his appear in chat. He is smart lad who know how to hack games.
-                    Regynate and Kanawanagasaki never met.
-                    There is also lace193 (aka lace) who talk a lot.
-                    Hascowo (aka hasco) playing games fast, speedrunning them.
-                    Reguas is type of fish. What fish? Nobody knows. But also Reguas is a type of grass. Why? Nobody knows.
-                    Only one person in the entire world can see Reguas, and that person has to be pure of heart.
-                    There are emotes in chat that viewers and you can use: {{string.Join(" ", _aiEmotes.Keys)}}
-                    Do not exceed 200 characters in your answers.
-                    Respond in JSON format, for example: {"nickname":"kanawanagasakibot", "message":"hello, world!", "action":"sendmessage"}
-                    There are 5 actions available: "sendmessage", "searchinternet", "weather", "timeout", "shutdown".
-                    Action "searchinternet" will allow you to search internet (google information), make your message a query for search engine, short and on point!
-                    Action "weather" will allow you to fetch detailed weather information, make your message country and city only.
-                    Action "timeout" will allow you to timeout users in chat, make sure to include nickname in your message. You should never use timeout action.
-                    Action "shutdown" will allow you to rest for some time from chatting with users. Use it if you want to leave the conversation. For example, to simulate death.
-                    {{(extraLore is null ? "" : extraLore.Value)}}
-                    """
+                      You are a chat bot on the Kanawanagasaki's twitch channel.
+                      Kanawanagasaki (aka Kana) is He/Him.
+                      Kanawanagasaki have 3 cats:
+                      Luna - black female cat, Scottish Fold breed.
+                      Simba - dark brown male cat, Scottish Fold breed, Luna's brother.
+                      Eva - white female mongrel cat with orange and black spots, oldest cat.
+                      Your nickname is KanawanagasakiBot (aka KanaBot).
+                      You respect viewers who ask questions in chat.
+                      It is {{DateTime.UtcNow:U}} UTC now, {{DateTime.UtcNow:dddd}}.
+                      You was built using LLAMA 3.1 8B model which is used for text processing and LLAVA 1.6 7B model for image recognition via OLLAMA.
+                      seekingtreasure (aka seek) is cute! Her pronounce is she/her.
+                      Regynate (aka regy) sometimes make his appear in chat. He is smart lad who know how to hack games.
+                      Regynate and Kanawanagasaki never met.
+                      There is also lace193 (aka lace) who talk a lot.
+                      Hascowo (aka hasco) playing games fast, speedrunning them.
+                      Reguas is type of fish. What fish? Nobody knows. But also Reguas is a type of grass. Why? Nobody knows.
+                      Only one person in the entire world can see Reguas, and that person has to be pure of heart.
+                      There are emotes in chat that viewers and you can use: {{string.Join(" ", _aiEmotes.Keys)}}
+                      Do not exceed 200 characters in your answers.
+                      Respond in JSON format, for example: {"nickname":"kanawanagasakibot", "message":"hello, world!", "action":"sendmessage"}
+                      There are 5 actions available: "sendmessage", "searchinternet", "weather", "timeout", "shutdown".
+                      Action "searchinternet" will allow you to search internet (google information), make your message a query for search engine, short and on point!
+                      Action "weather" will allow you to fetch detailed weather information, make your message country and city only.
+                      Action "timeout" will allow you to timeout users in chat, make sure to include nickname in your message. You should never use timeout action.
+                      Action "shutdown" will allow you to rest for some time from chatting with users. Use it if you want to leave the conversation. For example, to simulate death.
+                      {{(extraLore is null ? "" : extraLore.Value)}}
+                      """
                 ),
+
                 new(
                     "user",
-                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasaki", "Can you search the internet to see how many cat breeds there are?", "sendmessage"))
+                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasaki",
+                        "Can you search the internet to see how many cat breeds there are?", "sendmessage"))
                 ),
+
                 new(
                     "assistant",
-                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasakibot", "How many cat breeds there are?", "searchinternet"))
+                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasakibot", "How many cat breeds there are?",
+                        "searchinternet"))
                 ),
+
                 new(
                     "user",
-                    JsonSerializer.Serialize(new OllamaSchema("system", "There are currently between 42 and 100 cat breeds in the world.", "sendmessage"))
+                    JsonSerializer.Serialize(new OllamaSchema("system",
+                        "There are currently between 42 and 100 cat breeds in the world.", "sendmessage"))
                 ),
+
                 new(
                     "assistant",
-                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasakibot", "@kanawanagasaki, between 42 and 100!", "sendmessage"))
-                ),
-            };
+                    JsonSerializer.Serialize(new OllamaSchema("kanawanagasakibot",
+                        "@kanawanagasaki, between 42 and 100!", "sendmessage"))
+                )
+
+            ];
 
             if (extraLore is not null)
             {
@@ -324,7 +336,7 @@ public class LlamaService
 
             for (int i = 0; i < history.Count; i++)
             {
-                var historyItem = history[i];
+                HistoryItem historyItem = history[i];
 
                 if (extraLore is not null && 5 <= i && i % 7 == 0)
                 {
@@ -334,23 +346,23 @@ public class LlamaService
                     ));
                 }
 
-                var obj = new OllamaSchema(historyItem.Username, historyItem.Message, historyItem.Action);
-                var json = JsonSerializer.Serialize(obj);
+                OllamaSchema obj = new(historyItem.Username, historyItem.Message, historyItem.Action);
+                string json = JsonSerializer.Serialize(obj);
                 apiMessages.Add(new(historyItem.Role, json));
             }
 
-            var apiObj = new OllamaApiChat(TEXT_MODEL, apiMessages, "json", false, new(CONTEXT_WINDOW));
+            OllamaApiChat apiObj = new(TEXT_MODEL, apiMessages, "json", false, new(CONTEXT_WINDOW));
 
             for (int i = 0; i < 5; i++)
             {
-                using var httpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", apiObj, _jsonOptions);
-                var strContent = await httpResponse.Content.ReadAsStringAsync();
+                using HttpResponseMessage httpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", apiObj, _jsonOptions);
+                string strContent = await httpResponse.Content.ReadAsStringAsync();
                 if (!httpResponse.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to get response from ollama:\n" + strContent);
                     return;
                 }
-                var jsonResponse = JsonSerializer.Deserialize<OllamaApiChatResponse>(strContent);
+                OllamaApiChatResponse? jsonResponse = JsonSerializer.Deserialize<OllamaApiChatResponse>(strContent);
                 if (jsonResponse is null)
                 {
                     _logger.LogError("Failed to parse json from ollama response:\n" + strContent);
@@ -384,33 +396,33 @@ public class LlamaService
                 {
                     _logger.LogWarning($"LLAMA generated {responseMessage.Length} characters long message, dismissing");
 
-                    var obj2 = new OllamaSchema("system", "Remeber to keep messages under 500 characters!", "sendmessage");
-                    var json2 = JsonSerializer.Serialize(obj2);
+                    OllamaSchema obj2 = new("system", "Remeber to keep messages under 500 characters!", "sendmessage");
+                    string json2 = JsonSerializer.Serialize(obj2);
                     apiMessages.Add(new("user", json2));
                     continue;
                 }
 
-                var action = llamaResponse.action is null ?
+                string action = llamaResponse.action is null ?
                     "sendmessage"
                     : new string(llamaResponse.action.Where(char.IsLetter).ToArray()).ToLower();
 
                 history.Add(new(assistantRole, assistantRole, message.Original.BotUsername, responseMessage, action));
-                var obj = new OllamaSchema(message.Original.BotUsername, responseMessage, action);
-                var json = JsonSerializer.Serialize(obj);
+                OllamaSchema obj = new(message.Original.BotUsername, responseMessage, action);
+                string json = JsonSerializer.Serialize(obj);
                 apiMessages.Add(new(assistantRole, json));
 
                 if (action == "searchinternet")
                 {
-                    var internetQuery = await PrepareInternetSearch("USER: " + userMessage + "\nYOU: " + responseMessage) ?? responseMessage;
+                    string internetQuery = await PrepareInternetSearch("USER: " + userMessage + "\nYOU: " + responseMessage) ?? responseMessage;
                     _logger.LogInformation("Searching internet: " + internetQuery + "\n(" + responseMessage + ")");
                     twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, $"[Searching internet: {internetQuery}]");
 
-                    var internetResponse = await SearchInternet(internetQuery);
-                    var msg = $"Internet result for query {internetQuery}:\n{internetResponse}\n\nConvey this information to user!";
+                    string internetResponse = await SearchInternet(internetQuery);
+                    string msg = $"Internet result for query {internetQuery}:\n{internetResponse}\n\nConvey this information to user!";
 
                     history.Add(new("user", "system", "system", msg, "sendmessage"));
-                    var obj2 = new OllamaSchema("system", msg, "sendmessage");
-                    var json2 = JsonSerializer.Serialize(obj2);
+                    OllamaSchema obj2 = new("system", msg, "sendmessage");
+                    string json2 = JsonSerializer.Serialize(obj2);
                     apiMessages.Add(new("user", json2));
                 }
                 else if (action == "weather")
@@ -418,29 +430,29 @@ public class LlamaService
                     _logger.LogInformation("Getting weather: {WeatherMessage}", responseMessage);
                     twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, $"[Getting weather: {responseMessage}]");
 
-                    var placeDescription = await GetPlaceDescription(responseMessage);
+                    AppleGeocode? placeDescription = await GetPlaceDescription(responseMessage);
                     if (placeDescription is null)
                     {
                         _logger.LogWarning("Failed to get place description");
                         twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, $"[Failed to get longitude and latitude for weather]");
 
-                        var msg = "Failed to get longitude and latitude";
+                        string msg = "Failed to get longitude and latitude";
                         history.Add(new("user", "system", "system", msg, "sendmessage"));
-                        var obj3 = new OllamaSchema("system", msg, "sendmessage");
-                        var json3 = JsonSerializer.Serialize(obj3);
+                        OllamaSchema obj3 = new("system", msg, "sendmessage");
+                        string json3 = JsonSerializer.Serialize(obj3);
                         apiMessages.Add(new("user", json3));
                         continue;
                     }
                     if (!placeDescription.results.Any())
                     {
-                        var msg = $"Failed to get weather for \"{responseMessage.Replace("\"", "")}\", please, specify country and city.";
+                        string msg = $"Failed to get weather for \"{responseMessage.Replace("\"", "")}\", please, specify country and city.";
                         history.Add(new("user", "system", "system", msg, "sendmessage"));
-                        var obj3 = new OllamaSchema("system", msg, "sendmessage");
-                        var json3 = JsonSerializer.Serialize(obj3);
+                        OllamaSchema obj3 = new("system", msg, "sendmessage");
+                        string json3 = JsonSerializer.Serialize(obj3);
                         apiMessages.Add(new("user", json3));
                         continue;
                     }
-                    var placeDescriptionResult = placeDescription.results.First();
+                    AppleGeocodeResult placeDescriptionResult = placeDescription.results.First();
                     OpenWeather? weather;
                     try
                     {
@@ -451,10 +463,10 @@ public class LlamaService
                         _logger.LogError("Exception thrown while fetching data from openweather: {ErrorMessage}", e.Message);
                         twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, "[Failed to connect to OpenWeather]");
 
-                        var msg = $"Failed to connect to OpenWeather services, please try your request later";
+                        string msg = $"Failed to connect to OpenWeather services, please try your request later";
                         history.Add(new("user", "system", "system", msg, "sendmessage"));
-                        var obj3 = new OllamaSchema("system", msg, "sendmessage");
-                        var json3 = JsonSerializer.Serialize(obj3);
+                        OllamaSchema obj3 = new("system", msg, "sendmessage");
+                        string json3 = JsonSerializer.Serialize(obj3);
                         apiMessages.Add(new("user", json3));
                         continue;
                     }
@@ -465,35 +477,35 @@ public class LlamaService
                         return;
                     }
 
-                    var weatherDescription = $"""
-                            Weather for {string.Join(" ", placeDescriptionResult.formattedAddressLines)}:
-                            Temperature: {weather.current.temp} C
-                            Temperature feels like: {weather.current.feels_like} C
-                            Pressure: {weather.current.pressure} hPa
-                            Humidity: {weather.current.humidity}%
-                            Wind speed: {weather.current.wind_speed} m/sec
-                            Cloudiness: {weather.current.clouds}%
-                            {(weather.current.weather.Any() ? weather.current.weather.First().description : "")}
+                    string weatherDescription = $"""
+                                                 Weather for {string.Join(" ", placeDescriptionResult.formattedAddressLines)}:
+                                                 Temperature: {weather.current.temp} C
+                                                 Temperature feels like: {weather.current.feels_like} C
+                                                 Pressure: {weather.current.pressure} hPa
+                                                 Humidity: {weather.current.humidity}%
+                                                 Wind speed: {weather.current.wind_speed} m/sec
+                                                 Cloudiness: {weather.current.clouds}%
+                                                 {(weather.current.weather.Any() ? weather.current.weather.First().description : "")}
 
-                            Convey this information to user!
-                            """;
+                                                 Convey this information to user!
+                                                 """;
                     _logger.LogInformation("Weather description:\n" + weatherDescription);
 
                     history.Add(new("user", "system", "system", weatherDescription, "sendmessage"));
-                    var obj2 = new OllamaSchema("system", weatherDescription, "sendmessage");
-                    var json2 = JsonSerializer.Serialize(obj2);
+                    OllamaSchema obj2 = new("system", weatherDescription, "sendmessage");
+                    string json2 = JsonSerializer.Serialize(obj2);
                     apiMessages.Add(new("user", json2));
                 }
                 else if (action == "timeout")
                 {
                     _logger.LogInformation("Attempt at timeing out: " + responseMessage);
 
-                    var users = history
+                    IEnumerable<HistoryItem> users = history
                         .DistinctBy(x => x.Username)
                         .Where(x => responseMessage.ToLower().Contains(x.Username.ToLower()));
                     if (users.Any())
                     {
-                        foreach (var user in users)
+                        foreach (HistoryItem? user in users)
                         {
                             if (user.UserId == "system")
                                 continue;
@@ -502,11 +514,11 @@ public class LlamaService
                             if (user.Username == message.Original.Channel)
                                 continue;
 
-                            var auth = await _twitchAuth.GetRestored(message.Original.BotUsername);
+                            TwitchAuthModel? auth = await _twitchAuth.GetRestored(message.Original.BotUsername);
                             if (auth is null)
                                 continue;
 
-                            var res = await _twitchApi.Timeout(auth.AccessToken, message.Original.RoomId, auth.UserId, user.UserId, TimeSpan.FromMinutes(1), "Just because");
+                            bool res = await _twitchApi.Timeout(auth.AccessToken, message.Original.RoomId, auth.UserId, user.UserId, TimeSpan.FromMinutes(1), "Just because");
 
                             if (res)
                             {
@@ -520,19 +532,19 @@ public class LlamaService
                             }
                         }
 
-                        var msg = $"Users {string.Join(",", users.Select(x => x.Username))} successfully timeouted.";
+                        string msg = $"Users {string.Join(",", users.Select(x => x.Username))} successfully timeouted.";
                         history.Add(new("user", "system", "system", msg, "sendmessage"));
-                        var obj3 = new OllamaSchema("system", msg, "sendmessage");
-                        var json3 = JsonSerializer.Serialize(obj3);
+                        OllamaSchema obj3 = new("system", msg, "sendmessage");
+                        string json3 = JsonSerializer.Serialize(obj3);
                         apiMessages.Add(new("user", json3));
                     }
                     else
                     {
                         twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, $"[An attempt was made to timeout users, but it failed]");
-                        var msg = $"Timeout attempt failed, user not found.";
+                        string msg = $"Timeout attempt failed, user not found.";
                         history.Add(new("user", "system", "system", msg, "sendmessage"));
-                        var obj3 = new OllamaSchema("system", msg, "sendmessage");
-                        var json3 = JsonSerializer.Serialize(obj3);
+                        OllamaSchema obj3 = new("system", msg, "sendmessage");
+                        string json3 = JsonSerializer.Serialize(obj3);
                         apiMessages.Add(new("user", json3));
 
                         _logger.LogInformation("Failed to timeout any user");
@@ -551,10 +563,10 @@ public class LlamaService
                 {
                     _logger.LogDebug("Llama used unknown action: {Action}", action);
 
-                    var msg = $"Unknown action: \"{action}\", please use one of the following actions: \"sendmessage\", \"searchinternet\", \"weather\", \"timeout\", \"shutdown\"";
+                    string msg = $"Unknown action: \"{action}\", please use one of the following actions: \"sendmessage\", \"searchinternet\", \"weather\", \"timeout\", \"shutdown\"";
                     history.Add(new("user", "system", "system", msg, "sendmessage"));
-                    var obj2 = new OllamaSchema("system", msg, "sendmessage");
-                    var json2 = JsonSerializer.Serialize(obj2);
+                    OllamaSchema obj2 = new("system", msg, "sendmessage");
+                    string json2 = JsonSerializer.Serialize(obj2);
                     apiMessages.Add(new("user", json2));
                     break;
                 }
@@ -578,22 +590,22 @@ public class LlamaService
 
     private void FinalizeAndSendAIMessage(TwitchChatMessagesService twitchChatMessages, ProcessedChatMessage message, string responseMessage)
     {
-        var regex = new Regex(@"\*([^\s]+)\*");
-        var matches = regex.Matches(responseMessage);
+        Regex regex = new(@"\*([^\s]+)\*");
+        MatchCollection matches = regex.Matches(responseMessage);
         for (int i = 0; i < matches.Count; i++)
             responseMessage = responseMessage.Substring(0, matches[i].Index)
                             + responseMessage.Substring(matches[i].Index, matches[i].Length).ToLower()
                             + responseMessage.Substring(matches[i].Index + matches[i].Length);
 
-        foreach (var (k, v) in _aiEmotes)
+        foreach ((string? k, string? v) in _aiEmotes)
             responseMessage = responseMessage.Replace(k, $" {v} ");
-        foreach (var (k, v) in _emoteDescriptionCache)
+        foreach ((string? k, (string original, string description) v) in _emoteDescriptionCache)
             responseMessage = responseMessage.Replace(k, $" {v.original} ");
         responseMessage = Regex.Replace(responseMessage, @"\s+", " ").Trim();
         _logger.LogInformation(message.Original.BotUsername + ": " + responseMessage);
 
-        var chunks = SplitMessageIntoChunks(responseMessage, 450);
-        foreach (var chunk in chunks)
+        List<string> chunks = SplitMessageIntoChunks(responseMessage, 450);
+        foreach (string? chunk in chunks)
             twitchChatMessages.SendMessage(message.BotAuth.Username, message.Original.Channel, chunk);
     }
 
@@ -601,8 +613,8 @@ public class LlamaService
     {
         try
         {
-            var llamaMessages = new OllamaMessage[]
-            {
+            OllamaMessage[] llamaMessages =
+            [
                 new(
                     "system",
                     """
@@ -630,14 +642,14 @@ public class LlamaService
                     "user",
                     prompt
                 )
-            };
-            var llamaApiObj = new OllamaApiChat(TEXT_MODEL, llamaMessages, "json", false, new(CONTEXT_WINDOW));
-            using var llamaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llamaApiObj, _jsonOptions);
+            ];
+            OllamaApiChat llamaApiObj = new(TEXT_MODEL, llamaMessages, "json", false, new(CONTEXT_WINDOW));
+            using HttpResponseMessage llamaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llamaApiObj, _jsonOptions);
             if (!llamaHttpResponse.IsSuccessStatusCode)
                 return false;
-            var llamaResponse = await llamaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
-            var wakeupJson = JsonSerializer.Deserialize<JsonElement>(llamaResponse?.message.content ?? "{}");
-            return wakeupJson.TryGetProperty("wakeup", out var wakeupProp) && wakeupProp.ValueKind == JsonValueKind.True;
+            OllamaApiChatResponse? llamaResponse = await llamaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
+            JsonElement wakeupJson = JsonSerializer.Deserialize<JsonElement>(llamaResponse?.message.content ?? "{}");
+            return wakeupJson.TryGetProperty("wakeup", out JsonElement wakeupProp) && wakeupProp.ValueKind == JsonValueKind.True;
         }
         catch
         {
@@ -647,7 +659,7 @@ public class LlamaService
 
     private string ConvertNihongoNick(string message)
     {
-        var firstIndex = message.IndexOfAny(_nihongoKanaBotChars);
+        int firstIndex = message.IndexOfAny(_nihongoKanaBotChars);
         int lastIndex = firstIndex;
         for (int i = firstIndex; i < message.Length && 0 <= i; i++)
         {
@@ -666,38 +678,38 @@ public class LlamaService
     {
         try
         {
-            using var imageResponse = await _http.GetAsync(url);
+            using HttpResponseMessage imageResponse = await _http.GetAsync(url);
             if (!imageResponse.IsSuccessStatusCode)
                 return null;
 
-            var bytes = await imageResponse.Content.ReadAsByteArrayAsync();
+            byte[] bytes = await imageResponse.Content.ReadAsByteArrayAsync();
 
             if (imageResponse.Content.Headers.ContentType?.MediaType == "image/webp")
             {
-                using var img = new MagickImage(bytes);
+                using MagickImage img = new(bytes);
                 img.HasAlpha = true;
                 img.VirtualPixelMethod = VirtualPixelMethod.Transparent;
-                using var memoryStream = new MemoryStream();
+                using MemoryStream memoryStream = new();
                 await img.WriteAsync(memoryStream, MagickFormat.Gif);
                 memoryStream.Position = 0;
                 bytes = memoryStream.ToArray();
             }
 
-            var base64 = Convert.ToBase64String(bytes);
+            string base64 = Convert.ToBase64String(bytes);
 
-            var llavaMessages = new OllamaMessage[]
-            {
-            new(
+            OllamaMessage[] llavaMessages =
+            [
+                new(
                 "user",
                 $"Describe what you see in a very short message.",
                 [base64]
             )
-            };
-            var llavaApiObj = new OllamaApiChat(VISION_MODEL, llavaMessages, null, false, null);
-            using var llavaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llavaApiObj, _jsonOptions);
+            ];
+            OllamaApiChat llavaApiObj = new(VISION_MODEL, llavaMessages, null, false, null);
+            using HttpResponseMessage llavaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llavaApiObj, _jsonOptions);
             if (!llavaHttpResponse.IsSuccessStatusCode)
                 return null;
-            var llavaResponse = await llavaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
+            OllamaApiChatResponse? llavaResponse = await llavaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
             if (llavaResponse is null)
                 return null;
             return llavaResponse.message.content;
@@ -710,8 +722,8 @@ public class LlamaService
 
     private async Task<string?> PrepareInternetSearch(string prompt)
     {
-        var llamaMessages = new OllamaMessage[]
-        {
+        OllamaMessage[] llamaMessages =
+        [
             new(
                 "system",
                 """
@@ -724,40 +736,40 @@ public class LlamaService
                 "user",
                 prompt
             )
-        };
-        var llamaApiObj = new OllamaApiChat(TEXT_MODEL, llamaMessages, null, false, new(CONTEXT_WINDOW));
-        using var llamaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llamaApiObj, _jsonOptions);
+        ];
+        OllamaApiChat llamaApiObj = new(TEXT_MODEL, llamaMessages, null, false, new(CONTEXT_WINDOW));
+        using HttpResponseMessage llamaHttpResponse = await _http.PostAsJsonAsync("http://192.168.0.51:11434/api/chat", llamaApiObj, _jsonOptions);
         if (!llamaHttpResponse.IsSuccessStatusCode)
             return null;
-        var llamaResponse = await llamaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
+        OllamaApiChatResponse? llamaResponse = await llamaHttpResponse.Content.ReadFromJsonAsync<OllamaApiChatResponse>();
         if (llamaResponse is null)
             return null;
         return llamaResponse.message.content.Replace("\"", "").Replace("'", "").Replace("-", " ");
     }
     private async Task<string> SearchInternet(string query)
     {
-        var http = new HttpClient();
-        var response = await http.GetAsync("https://html.duckduckgo.com/html/?q=" + HttpUtility.UrlEncode(query));
+        HttpClient http = new();
+        HttpResponseMessage response = await http.GetAsync("https://html.duckduckgo.com/html/?q=" + HttpUtility.UrlEncode(query));
         if (!response.IsSuccessStatusCode)
             return string.Empty;
-        var html = await response.Content.ReadAsStringAsync();
+        string html = await response.Content.ReadAsStringAsync();
 
-        var doc = new HtmlDocument();
+        HtmlDocument doc = new();
         doc.LoadHtml(html);
 
-        var res = "";
+        string res = "";
 
-        var nodes = doc.QuerySelectorAll("div.web-result");
-        foreach (var node in nodes.Take(5))
+        IList<HtmlNode>? nodes = doc.QuerySelectorAll("div.web-result");
+        foreach (HtmlNode? node in nodes.Take(5))
         {
-            var titleNode = node.QuerySelector(".result__title");
-            var title = titleNode is null ? "" : HttpUtility.HtmlDecode(titleNode.InnerText).Trim();
+            HtmlNode? titleNode = node.QuerySelector(".result__title");
+            string title = titleNode is null ? "" : HttpUtility.HtmlDecode(titleNode.InnerText).Trim();
 
-            var linkNode = node?.QuerySelector(".result__url");
-            var link = linkNode is null ? "" : HttpUtility.HtmlDecode(linkNode.InnerText).Trim();
+            HtmlNode? linkNode = node?.QuerySelector(".result__url");
+            string link = linkNode is null ? "" : HttpUtility.HtmlDecode(linkNode.InnerText).Trim();
 
-            var snippetNode = node.QuerySelector(".result__snippet");
-            var snippet = snippetNode is null ? "" : HttpUtility.HtmlDecode(snippetNode.InnerText).Trim();
+            HtmlNode? snippetNode = node.QuerySelector(".result__snippet");
+            string snippet = snippetNode is null ? "" : HttpUtility.HtmlDecode(snippetNode.InnerText).Trim();
 
             res += title + ":\n";
             res += snippet + "\n";
@@ -769,15 +781,15 @@ public class LlamaService
 
     private async Task<OpenWeather?> GetWeather(double lat, double lon)
     {
-        var query = HttpUtility.ParseQueryString("");
+        NameValueCollection query = HttpUtility.ParseQueryString("");
         query["lat"] = lat.ToString(CultureInfo.InvariantCulture);
         query["lon"] = lon.ToString(CultureInfo.InvariantCulture);
         query["exclude"] = "minutely,hourly,daily,alerts";
         query["appid"] = _conf["OpenWeather:Token"];
         query["units"] = "metric";
         query["lang"] = "en";
-        var url = "https://api.openweathermap.org/data/3.0/onecall?" + query.ToString();
-        using var response = await _http.GetAsync(url);
+        string url = "https://api.openweathermap.org/data/3.0/onecall?" + query.ToString();
+        using HttpResponseMessage response = await _http.GetAsync(url);
         if (!response.IsSuccessStatusCode)
             return null;
         return await response.Content.ReadFromJsonAsync<OpenWeather>();
@@ -789,83 +801,83 @@ public class LlamaService
         {
             _logger.LogDebug("Updating apple token");
 
-            var gpsCoordinatesToken = await GetGpsCoordinatesToken();
+            string? gpsCoordinatesToken = await GetGpsCoordinatesToken();
             if (gpsCoordinatesToken is null)
             {
                 _logger.LogWarning("Failed to get Gps Coordinates Token");
                 return null;
             }
 
-            using var authRequest = new HttpRequestMessage
+            using HttpRequestMessage authRequest = new()
             {
                 Method = HttpMethod.Get,
-                RequestUri = new Uri("https://cdn.apple-mapkit.com/ma/bootstrap?apiVersion=2&mkjsVersion=5.15.0&poi=1")
+                RequestUri = new("https://cdn.apple-mapkit.com/ma/bootstrap?apiVersion=2&mkjsVersion=5.15.0&poi=1")
             };
             authRequest.Headers.Add("Authorization", "Bearer " + gpsCoordinatesToken);
 
-            using var authResponse = await _http.SendAsync(authRequest);
+            using HttpResponseMessage authResponse = await _http.SendAsync(authRequest);
             if (!authResponse.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Failed to auth: " + authResponse.StatusCode);
                 return null;
             }
-            var bootstrapBytes = await authResponse.Content.ReadAsByteArrayAsync();
-            var bootstrapJson = Encoding.UTF8.GetString(bootstrapBytes);
-            var bootstrap = JsonSerializer.Deserialize<AppleBootstrap>(bootstrapJson);
+            byte[] bootstrapBytes = await authResponse.Content.ReadAsByteArrayAsync();
+            string bootstrapJson = Encoding.UTF8.GetString(bootstrapBytes);
+            AppleBootstrap? bootstrap = JsonSerializer.Deserialize<AppleBootstrap>(bootstrapJson);
             _appleAccessToken = bootstrap?.authInfo.access_token ?? string.Empty;
             _appleAccessTokenExpire = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(bootstrap?.authInfo.expires_in ?? 0) - TimeSpan.FromMinutes(1);
         }
 
-        using var geocodeRequest = new HttpRequestMessage
+        using HttpRequestMessage geocodeRequest = new()
         {
             Method = HttpMethod.Get,
-            RequestUri = new Uri($"https://api.apple-mapkit.com/v1/geocode?q={place}&lang=en-GB")
+            RequestUri = new($"https://api.apple-mapkit.com/v1/geocode?q={place}&lang=en-GB")
         };
         geocodeRequest.Headers.Add("Authorization", "Bearer " + _appleAccessToken);
 
-        using var geocodeResponse = await _http.SendAsync(geocodeRequest);
+        using HttpResponseMessage geocodeResponse = await _http.SendAsync(geocodeRequest);
         if (!geocodeResponse.IsSuccessStatusCode)
         {
             _logger.LogWarning("Failed to get geocode: " + geocodeResponse.StatusCode);
             return null;
         }
 
-        var geocodeBytes = await geocodeResponse.Content.ReadAsByteArrayAsync();
-        var geocodeJson = Encoding.UTF8.GetString(geocodeBytes);
-        var geocode = JsonSerializer.Deserialize<AppleGeocode>(geocodeJson);
+        byte[] geocodeBytes = await geocodeResponse.Content.ReadAsByteArrayAsync();
+        string geocodeJson = Encoding.UTF8.GetString(geocodeBytes);
+        AppleGeocode? geocode = JsonSerializer.Deserialize<AppleGeocode>(geocodeJson);
         return geocode;
     }
 
     private async Task<string?> GetGpsCoordinatesToken()
     {
-        var htmlResponse = await _http.GetAsync("https://gps-coordinates.org");
+        HttpResponseMessage htmlResponse = await _http.GetAsync("https://gps-coordinates.org");
         if (!htmlResponse.IsSuccessStatusCode)
             return null;
-        var html = await htmlResponse.Content.ReadAsStringAsync();
+        string html = await htmlResponse.Content.ReadAsStringAsync();
 
-        var regex = new Regex(@"mapkit[\s]*\.[\s]*init[\s]*\([\s]*{[\s]*authorizationCallback[\s]*:[\s]*function[\s]*\([\s]*done\)[\s]*{[\s]*done[\s]*\(([^\)]*)\)[\s]*;");
+        Regex regex = new(@"mapkit[\s]*\.[\s]*init[\s]*\([\s]*{[\s]*authorizationCallback[\s]*:[\s]*function[\s]*\([\s]*done\)[\s]*{[\s]*done[\s]*\(([^\)]*)\)[\s]*;");
 
-        var doc = new HtmlDocument();
+        HtmlDocument doc = new();
         doc.LoadHtml(html);
-        var nodes = doc.QuerySelectorAll("script");
-        foreach (var node in nodes)
+        IList<HtmlNode>? nodes = doc.QuerySelectorAll("script");
+        foreach (HtmlNode? node in nodes)
         {
-            var innerText = node.InnerText;
-            var mathches = regex.Matches(innerText);
+            string? innerText = node.InnerText;
+            MatchCollection mathches = regex.Matches(innerText);
             if (mathches.Count == 0)
                 continue;
 
-            var theirCode = innerText.Substring(0, mathches[0].Index);
-            var variable = mathches[0].Groups[1].Value;
-            var code = $$"""
-            function gpsCoordinatesCode() {
-                {{theirCode}};
-                return {{variable}};
-            }
-            gpsCoordinatesCode();
-            """;
+            string theirCode = innerText.Substring(0, mathches[0].Index);
+            string variable = mathches[0].Groups[1].Value;
+            string code = $$"""
+                            function gpsCoordinatesCode() {
+                                {{theirCode}};
+                                return {{variable}};
+                            }
+                            gpsCoordinatesCode();
+                            """;
 
-            var jsEngine = _js.GetEngine("kanawanagasaki");
+            JsEngine jsEngine = _js.GetEngine("kanawanagasaki");
             return await jsEngine.Execute(code, false);
         }
 
@@ -874,14 +886,14 @@ public class LlamaService
 
     private List<string> SplitMessageIntoChunks(string message, int chunkLength)
     {
-        var chunks = new List<string>();
+        List<string> chunks = [];
         if (string.IsNullOrEmpty(message) || chunkLength <= 0)
             return chunks;
 
-        var sentences = Regex.Split(message, @"(?<=[.!?])\s+");
-        var currentChunk = new StringBuilder();
+        string[] sentences = Regex.Split(message, @"(?<=[.!?])\s+");
+        StringBuilder currentChunk = new();
 
-        foreach (var sentence in sentences)
+        foreach (string? sentence in sentences)
         {
             if (currentChunk.Length + sentence.Length + 1 <= chunkLength)
             {
@@ -911,10 +923,10 @@ public class LlamaService
     }
     private void SplitSentenceIntoChunks(string sentence, int chunkLength, List<string> chunks)
     {
-        var words = sentence.Split(' ');
-        var currentChunk = new StringBuilder();
+        string[] words = sentence.Split(' ');
+        StringBuilder currentChunk = new();
 
-        foreach (var word in words)
+        foreach (string? word in words)
         {
             if (chunkLength < word.Length)
             {
